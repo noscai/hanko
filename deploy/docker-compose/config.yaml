@@ -4,42 +4,95 @@ database:
   host: postgresd
   port: 5432
   dialect: postgres
+
+email:
+  enabled: true
+  # optional: false
+  # acquire_on_registration: true
+  # acquire_on_login: false
+  require_verification: false
+  # limit: 5
+  # use_as_login_identifier: true
+  # max_length: 100
+  # use_for_authentication: true
+  passcode_ttl: 300
+  max_num_of_addresses: 5
+
 email_delivery:
   smtp:
     host: "mailslurper"
     port: "2500"
   from_address: noreply@hanko.io
+
 secrets:
   keys:
     - abcedfghijklmnopqrstuvwxyz
+
 service:
-  name: Hanko Authentication Service
+  name: ClinicOS Auth Service
+
 webauthn:
   relying_party:
     origins:
       - "http://localhost:8888"
+      - "http://localhost:7000"
+      - "http://localhost:7001"
+      - "http://localhost:7002"
+      - "http://localhost:3000"
+      - "http://localhost:5173"
+
+# Session cookie configuration for local HTTP development
 session:
+  lifespan: 12h
   cookie:
-    secure: false # is needed for safari, because safari does not store secure cookies on localhost
-# MFA configuration with multi-user device trust support
+    secure: false
+    same_site: lax
+    http_only: true
+
+rate_limiter:
+  enabled: true
+  store: in_memory
+  passcode_limits:
+    tokens: 3
+    interval: 1m
+  password_limits:
+    tokens: 5
+    interval: 1m
+  token_limits:
+    tokens: 3
+    interval: 1m
+
+# username:
+#   enabled: true
+#   optional: true
+
+# MFA configuration with device trust
 mfa:
   enabled: true
   optional: true
   acquire_on_login: false
   acquire_on_registration: true
   device_trust_policy: "prompt"
-  device_trust_duration: "720h"
+  device_trust_duration: "5m"
   device_trust_cookie_name: "hanko-device-token"
-  device_trust_max_users_per_device: 20
   totp:
     enabled: true
   security_keys:
     enabled: false
+
 server:
   public:
+    address: "0.0.0.0:8000"
     cors:
       allow_origins:
         - "http://localhost:8888"
+        - "http://localhost:7000"
+        - "http://localhost:7001"
+        - "http://localhost:7002"
+        - "http://localhost:3000"
+        - "http://localhost:5173"
+      allow_credentials: true
+
 security_notifications:
   notifications:
     email_create:
