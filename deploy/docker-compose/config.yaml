@@ -45,6 +45,7 @@ webauthn:
 session:
   lifespan: 12h
   cookie:
+    name: clinicos-2fa
     secure: false
     same_site: lax
     http_only: true
@@ -74,7 +75,7 @@ mfa:
   acquire_on_registration: true
   device_trust_policy: "prompt"
   device_trust_duration: "5m"
-  device_trust_cookie_name: "hanko-device-token"
+  device_trust_cookie_name: "clinicos-2fa-device-token"
   totp:
     enabled: true
   security_keys:
