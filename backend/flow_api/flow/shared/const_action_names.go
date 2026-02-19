@@ -54,4 +54,5 @@ const (
 	ActionSessionDelete                          flowpilot.ActionName = "session_delete"
 	ActionConnectThirdpartyOauthProvider         flowpilot.ActionName = "connect_thirdparty_oauth_provider"
 	ActionDisconnectThirdpartyOauthProvider      flowpilot.ActionName = "disconnect_thirdparty_oauth_provider"
+	ActionPreAuthenticatedContinue              flowpilot.ActionName = "preauthenticated_continue"
 )

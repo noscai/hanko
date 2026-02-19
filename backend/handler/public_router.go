@@ -165,6 +165,7 @@ func NewPublicRouter(cfg *config.Config, persister persistence.Persister, promet
 
 	g.POST("/user", userHandler.GetUserIdByEmail)
 	g.POST("/logout", userHandler.Logout, sessionMiddleware)
+	g.POST("/device-trust/clear", userHandler.ClearDeviceTrust, sessionMiddleware)
 
 	if cfg.Account.AllowDeletion {
 		g.DELETE("/user", userHandler.Delete, sessionMiddleware, webhookMiddleware)
