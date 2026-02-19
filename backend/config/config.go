@@ -77,6 +77,8 @@ type Config struct {
 	Privacy Privacy `yaml:"privacy" json:"privacy,omitempty" koanf:"privacy" jsonschema:"title=privacy"`
 	// `multi_tenant` configures multi-tenant mode for tenant-scoped user isolation.
 	MultiTenant MultiTenant `yaml:"multi_tenant" json:"multi_tenant,omitempty" koanf:"multi_tenant" split_words:"true" jsonschema:"title=multi_tenant"`
+	// `service_token` configures service token validation for pre-authenticated flows.
+	ServiceToken ServiceToken `yaml:"service_token" json:"service_token,omitempty" koanf:"service_token" split_words:"true" jsonschema:"title=service_token"`
 }
 
 var (

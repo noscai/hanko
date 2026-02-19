@@ -27,7 +27,8 @@ var CredentialUsageSubFlow = flowpilot.NewSubFlow(shared.FlowCredentialUsage).
 		credential_usage.WebauthnGenerateRequestOptions{},
 		credential_usage.WebauthnVerifyAssertionResponse{},
 		credential_usage.RememberMe{},
-		shared.ThirdPartyOAuth{}).
+		shared.ThirdPartyOAuth{},
+		credential_usage.PreAuthenticatedContinue{}).
 	State(shared.StateLoginPasskey,
 		credential_usage.WebauthnVerifyAssertionResponse{},
 		shared.Back{}).

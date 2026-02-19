@@ -59,8 +59,14 @@ security_notifications:
 
 # Multi-tenant configuration
 # Uncomment and configure to enable multi-tenant mode
-# multi_tenant:
-#   enabled: true                    # Enable multi-tenant mode (default: false)
-#   tenant_header: "X-Tenant-ID"     # HTTP header for tenant ID (default: X-Tenant-ID)
-#   allow_global_users: true         # Allow users without tenant - backward compatible (default: true)
-#   auto_provision: true             # Auto-create tenant if ID doesn't exist (default: true)
+# Service token for pre-authenticated login flow
+# Allows trusted backends to bypass password/passkey/OTP by providing a signed JWT
+service_token:
+  secret: "k8sP2xQ7mN4vR9wF3jL6hT1yB5cA0eD"   # Shared HMAC secret with clinic-os-backend
+  issuer: "clinic-os-backend"                     # Expected JWT issuer (validated if set)
+
+multi_tenant:
+  enabled: true                    # Enable multi-tenant mode (default: false)
+  tenant_header: "X-Tenant-ID"     # HTTP header for tenant ID (default: X-Tenant-ID)
+  allow_global_users: true         # Allow users without tenant - backward compatible (default: true)
+  auto_provision: true             # Auto-create tenant if ID doesn't exist (default: true)
