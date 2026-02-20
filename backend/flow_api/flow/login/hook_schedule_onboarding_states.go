@@ -23,10 +23,12 @@ func (h ScheduleOnboardingStates) Execute(c flowpilot.HookExecutionContext) erro
 	}
 
 	mfaUsageStates := h.determineMFAUsageStates(c)
+	mfaCreationStates := h.determineMFACreationStatesForPreAuth(c)
 	userDetailOnboardingStates := h.determineUserDetailOnboardingStates(c)
 	credentialOnboardingStates := h.determineCredentialOnboardingStates(c)
 
 	c.ScheduleStates(mfaUsageStates...)
+	c.ScheduleStates(mfaCreationStates...)
 
 	if c.Stash().Get(shared.StashPathPasswordRecoveryPending).Bool() {
 		c.ScheduleStates(shared.StateLoginPasswordRecovery)
@@ -169,6 +171,27 @@ func (h ScheduleOnboardingStates) determineCredentialOnboardingStates(c flowpilo
 	} else if passwordEnabled && (alwaysAcquirePassword || conditionalAcquirePassword) {
 		if !hasPassword {
 			result = append(result, shared.StatePasswordCreation)
+		}
+	}
+
+	return result
+}
+
+func (h ScheduleOnboardingStates) determineMFACreationStatesForPreAuth(c flowpilot.HookExecutionContext) []flowpilot.StateName {
+	deps := h.GetDeps(c)
+	result := make([]flowpilot.StateName, 0)
+
+	if !deps.Cfg.MFA.Enabled {
+		return result
+	}
+
+	loginMethod := c.Stash().Get(shared.StashPathLoginMethod).String()
+	userHasOTPSecret := c.Stash().Get(shared.StashPathUserHasOTPSecret).Bool()
+	userHasSecurityKey := c.Stash().Get(shared.StashPathUserHasSecurityKey).Bool()
+
+	if loginMethod == "preauthenticated" && !userHasOTPSecret && !userHasSecurityKey {
+		if deps.Cfg.MFA.TOTP.Enabled {
+			result = append(result, shared.StateMFAOTPSecretCreation)
 		}
 	}
 
