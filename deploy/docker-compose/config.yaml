@@ -46,7 +46,7 @@ session:
   lifespan: 12h
   cookie:
     name: clinicos-2fa
-    secure: false
+    secure: false # is needed for safari, because safari does not store secure cookies on localhost
     same_site: lax
     http_only: true
 
@@ -114,14 +114,22 @@ security_notifications:
     mfa_delete:
       enabled: true
 
-# Multi-tenant configuration
-# Uncomment and configure to enable multi-tenant mode
+
 # Service token for pre-authenticated login flow
 # Allows trusted backends to bypass password/passkey/OTP by providing a signed JWT
 service_token:
   secret: "CHANGE_ME_IN_PRODUCTION"   # Shared HMAC secret with clinic-os-backend
   issuer: "clinic-os-backend"                     # Expected JWT issuer (validated if set)
 
+
+# Service token for pre-authenticated login flow
+# Allows trusted backends to bypass password/passkey/OTP by providing a signed JWT
+service_token:
+  secret: "CHANGE_ME_IN_PRODUCTION"   # Shared HMAC secret with clinic-os-backend
+  issuer: "clinic-os-backend"                     # Expected JWT issuer (validated if set)
+
+# Multi-tenant configuration
+# Uncomment and configure to enable multi-tenant mode
 multi_tenant:
   enabled: true                    # Enable multi-tenant mode (default: false)
   tenant_header: "X-Tenant-ID"     # HTTP header for tenant ID (default: X-Tenant-ID)
