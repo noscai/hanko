@@ -30,6 +30,7 @@ type Dependencies struct {
 	PasscodeRateLimiter         limiter.Store
 	PasswordRateLimiter         limiter.Store
 	TokenExchangeRateLimiter    limiter.Store
+	ServiceTokenRateLimiter     limiter.Store
 	Tx                          *pop.Connection
 	AuthenticatorMetadata       mapper.AuthenticatorMetadata
 	AuditLogger                 auditlog.Logger

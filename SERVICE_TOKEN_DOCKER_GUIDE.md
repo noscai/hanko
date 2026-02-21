@@ -411,6 +411,36 @@ curl -s -X POST http://localhost:8000/login \
 
 ---
 
+## Rate Limiting
+
+The `preauthenticated_continue` action is rate-limited by IP address to prevent brute force attacks. This follows the same pattern as password login, passcode, and OTP rate limiting.
+
+### Configuration
+
+Rate limiting is controlled under `rate_limiter.service_token_limits` in `config.yaml`:
+
+```yaml
+rate_limiter:
+  enabled: true
+  store: in_memory
+  service_token_limits:
+    tokens: 3        # Max 3 attempts
+    interval: 1m     # Per 1 minute window
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `tokens` | `3` | Maximum number of service token validation attempts per interval |
+| `interval` | `1m` | Time window for the rate limit (resets after this period) |
+
+When the rate limit is exceeded, the action returns HTTP 429 with a `retry_after` value (in seconds) indicating when the client can try again.
+
+### Rate Limit Key
+
+The rate limit key is `service_token/{ip}`, meaning limits are applied per requesting IP address. This is the same approach used for token exchange rate limiting.
+
+---
+
 ## Security Considerations
 
 | Concern | Recommendation |
@@ -420,6 +450,7 @@ curl -s -X POST http://localhost:8000/login \
 | Secret storage | Store the secret in environment variables or a secrets manager. Never commit it to git. |
 | Secret rotation | Rotate the secret periodically. Update both Hanko and the backend simultaneously. |
 | Issuer validation | Always set `service_token.issuer` in production to prevent cross-service token reuse. |
+| Rate limiting | Enabled by default via `rate_limiter.service_token_limits`. Limits brute force attempts per IP. |
 | Access control | Anyone with the shared secret can authenticate as any user. Limit access to the secret. |
 
 ---
