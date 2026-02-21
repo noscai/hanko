@@ -159,3 +159,7 @@ security_notifications:
       enabled: true
     mfa_delete:
       enabled: true
+# Service token for pre-authenticated login flow (disabled by default)
+# service_token:
+#   secret: ""          # Shared HMAC secret for service token validation (min 32 chars)
+#   issuer: ""          # Expected JWT issuer claim (optional)

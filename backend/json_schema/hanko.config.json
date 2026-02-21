@@ -283,6 +283,11 @@
           "$ref": "#/$defs/MultiTenant",
           "title": "multi_tenant",
           "description": "`multi_tenant` configures multi-tenant mode for tenant-scoped user isolation."
+        },
+        "service_token": {
+          "$ref": "#/$defs/ServiceToken",
+          "title": "service_token",
+          "description": "`service_token` configures service token validation for pre-authenticated flows."
         }
       },
       "additionalProperties": false,
@@ -1437,6 +1442,23 @@
       },
       "additionalProperties": false,
       "type": "object"
+    },
+    "ServiceToken": {
+      "properties": {
+        "secret": {
+          "type": "string",
+          "description": "Secret is the shared HMAC secret used to sign and validate service tokens.\nMust be at least 32 characters for adequate security. Both Hanko and the\ntrusted backend must use the same secret. If empty, service token\nauthentication is disabled.",
+          "default": ""
+        },
+        "issuer": {
+          "type": "string",
+          "description": "Issuer is the expected JWT issuer claim. If set, service tokens must include\na matching \"iss\" claim. If empty, issuer validation is skipped.",
+          "default": ""
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "ServiceToken configures service token validation for pre-authenticated login flows."
     },
     "Session": {
       "properties": {
