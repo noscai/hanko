@@ -1114,6 +1114,10 @@
         "token_limits": {
           "$ref": "#/$defs/RateLimits",
           "description": "`token_limits` controls rate limits for token exchange operations."
+        },
+        "service_token_limits": {
+          "$ref": "#/$defs/RateLimits",
+          "description": "`service_token_limits` controls rate limits for service token pre-authenticated login attempts."
         }
       },
       "additionalProperties": false,

@@ -6,6 +6,7 @@ import (
 	"github.com/gofrs/uuid"
 	"github.com/teamhanko/hanko/backend/v2/flow_api/flow/shared"
 	"github.com/teamhanko/hanko/backend/v2/flowpilot"
+	"github.com/teamhanko/hanko/backend/v2/rate_limiter"
 )
 
 type PreAuthenticatedContinue struct {
@@ -31,6 +32,23 @@ func (a PreAuthenticatedContinue) Initialize(c flowpilot.InitializationContext) 
 
 func (a PreAuthenticatedContinue) Execute(c flowpilot.ExecutionContext) error {
 	deps := a.GetDeps(c)
+
+	if deps.Cfg.RateLimiter.Enabled {
+		rateLimitKey := rate_limiter.CreateRateLimitServiceTokenKey(deps.HttpContext.RealIP())
+		retryAfterSeconds, ok, err := rate_limiter.Limit2(deps.ServiceTokenRateLimiter, rateLimitKey)
+		if err != nil {
+			return fmt.Errorf("rate limiter failed: %w", err)
+		}
+
+		if !ok {
+			err = c.Payload().Set("retry_after", retryAfterSeconds)
+			if err != nil {
+				return fmt.Errorf("failed to set a value for retry_after to the payload: %w", err)
+			}
+			return c.Error(shared.ErrorRateLimitExceeded.Wrap(fmt.Errorf("rate limit exceeded for: %s", rateLimitKey)))
+		}
+	}
+
 	serviceToken := c.Input().Get("service_token").String()
 
 	claims, err := validateServiceToken(

@@ -43,6 +43,7 @@ type FlowPilotHandler struct {
 	PasscodeRateLimiter         limiter.Store
 	PasswordRateLimiter         limiter.Store
 	TokenExchangeRateLimiter    limiter.Store
+	ServiceTokenRateLimiter     limiter.Store
 	AuthenticatorMetadata       mapper.AuthenticatorMetadata
 	AuditLogger                 auditlog.Logger
 	FlowLocker                  flow_locker.FlowLocker
@@ -179,6 +180,7 @@ func (h *FlowPilotHandler) executeFlow(c echo.Context, flow flowpilot.Flow) erro
 			PasscodeRateLimiter:         h.PasscodeRateLimiter,
 			PasswordRateLimiter:         h.PasswordRateLimiter,
 			TokenExchangeRateLimiter:    h.TokenExchangeRateLimiter,
+			ServiceTokenRateLimiter:     h.ServiceTokenRateLimiter,
 			Tx:                          tx,
 			Persister:                   h.Persister,
 			HttpContext:                 c,

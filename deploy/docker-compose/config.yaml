@@ -62,6 +62,9 @@ rate_limiter:
   token_limits:
     tokens: 3
     interval: 1m
+  service_token_limits:
+    tokens: 3
+    interval: 1m
 
 # username:
 #   enabled: true

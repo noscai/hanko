@@ -22,6 +22,8 @@ type RateLimiter struct {
 	PasswordLimits RateLimits `yaml:"password_limits" json:"password_limits,omitempty" koanf:"password_limits" split_words:"true"`
 	// `token_limits` controls rate limits for token exchange operations.
 	TokenLimits RateLimits `yaml:"token_limits" json:"token_limits,omitempty" koanf:"token_limits" split_words:"true" jsonschema:"default=token=3;interval=1m"`
+	// `service_token_limits` controls rate limits for service token pre-authenticated login attempts.
+	ServiceTokenLimits RateLimits `yaml:"service_token_limits" json:"service_token_limits,omitempty" koanf:"service_token_limits" split_words:"true"`
 }
 
 type RateLimits struct {
