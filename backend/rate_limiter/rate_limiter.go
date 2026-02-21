@@ -95,3 +95,7 @@ func CreateRateLimitOTPKey(realIP, userId string) string {
 func CreateRateLimitTokenExchangeKey(realIP string) string {
 	return fmt.Sprintf("token_exchange/%s", realIP)
 }
+
+func CreateRateLimitServiceTokenKey(realIP string) string {
+	return fmt.Sprintf("service_token/%s", realIP)
+}

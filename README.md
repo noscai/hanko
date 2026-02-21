@@ -60,6 +60,21 @@ The remainder of the repository consists of:
 - [examples](frontend/examples) - Example implementations for a number of frameworks
 - docs - The Hanko documentation ([docs.hanko.io](https://docs.hanko.io)) -> Moved to its own repo here: https://github.com/teamhanko/docs
 
+## Fork Extensions (ClinicOS)
+
+This fork adds the following features on top of upstream Hanko:
+
+| Feature | Config Key | Guide |
+|---------|-----------|-------|
+| **Multi-Tenant Mode** | `multi_tenant` | [Multi-Tenant Docker Guide](MULTI_TENANT_DOCKER_GUIDE.md) |
+| **Service Token Pre-Auth** | `service_token` | [Service Token Docker Guide](SERVICE_TOKEN_DOCKER_GUIDE.md) |
+
+**Multi-Tenant Mode** enables tenant-scoped user isolation via `X-Tenant-ID` header. The same email can exist in multiple tenants with independent credentials. See [MULTI_TENANT_DOCKER_GUIDE.md](MULTI_TENANT_DOCKER_GUIDE.md) for deployment and testing.
+
+**Service Token Pre-Authentication** allows trusted backend services to generate HMAC-signed JWTs that bypass the normal login flow (password/passkey/OTP). See [SERVICE_TOKEN_DOCKER_GUIDE.md](SERVICE_TOKEN_DOCKER_GUIDE.md) for deployment and testing.
+
+For a summary of all changes, see [CHANGES.md](CHANGES.md).
+
 # Getting started
 1. Try our hosted [live example](https://example.hanko.io) and our companion page [passkeys.io](https://www.passkeys.io) or use the [quickstart app](/quickstart/README.md) to get a feel for the user experience provided by an application that leverages the Hanko backend API and our custom web component
 2. To run the project locally, there are two options available:

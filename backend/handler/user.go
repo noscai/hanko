@@ -354,3 +354,22 @@ func (h *UserHandler) Logout(c echo.Context) error {
 
 	return c.NoContent(http.StatusNoContent)
 }
+
+func (h *UserHandler) ClearDeviceTrust(c echo.Context) error {
+	_, ok := c.Get("session").(jwt.Token)
+	if !ok {
+		return errors.New("missing or malformed jwt")
+	}
+
+	c.SetCookie(&http.Cookie{
+		Name:     h.cfg.MFA.DeviceTrustCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteNoneMode,
+	})
+
+	return c.NoContent(http.StatusNoContent)
+}

@@ -20,8 +20,32 @@ webauthn:
       - "http://localhost:8888"
 session:
   cookie:
+    name: clinicos-2fa
     secure: false # is needed for safari, because safari does not store secure cookies on localhost
-# MFA configuration with multi-user device trust support
+    same_site: lax
+    http_only: true
+
+rate_limiter:
+  enabled: true
+  store: in_memory
+  passcode_limits:
+    tokens: 3
+    interval: 1m
+  password_limits:
+    tokens: 5
+    interval: 1m
+  token_limits:
+    tokens: 3
+    interval: 1m
+  service_token_limits:
+    tokens: 3
+    interval: 1m
+
+# username:
+#   enabled: true
+#   optional: true
+
+# MFA configuration with device trust
 mfa:
   enabled: true
   optional: true
@@ -56,6 +80,13 @@ security_notifications:
       enabled: true
     mfa_delete:
       enabled: true
+
+
+# Service token for pre-authenticated login flow
+# Allows trusted backends to bypass password/passkey/OTP by providing a signed JWT
+# service_token:
+#   secret: "CHANGE_ME_IN_PRODUCTION"   # Shared HMAC secret with clinic-os-backend
+#   issuer: "clinic-os-backend"                     # Expected JWT issuer (validated if set)
 
 # Multi-tenant configuration
 # Uncomment and configure to enable multi-tenant mode

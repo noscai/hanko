@@ -52,11 +52,13 @@ func NewPublicRouter(cfg *config.Config, persister persistence.Persister, promet
 	var passcodeRateLimiter limiter.Store
 	var passwordRateLimiter limiter.Store
 	var tokenExchangeRateLimiter limiter.Store
+	var serviceTokenRateLimiter limiter.Store
 	if cfg.RateLimiter.Enabled {
 		otpRateLimiter = rate_limiter.NewRateLimiter(cfg.RateLimiter, cfg.RateLimiter.OTPLimits)
 		passcodeRateLimiter = rate_limiter.NewRateLimiter(cfg.RateLimiter, cfg.RateLimiter.PasscodeLimits)
 		passwordRateLimiter = rate_limiter.NewRateLimiter(cfg.RateLimiter, cfg.RateLimiter.PasswordLimits)
 		tokenExchangeRateLimiter = rate_limiter.NewRateLimiter(cfg.RateLimiter, cfg.RateLimiter.TokenLimits)
+		serviceTokenRateLimiter = rate_limiter.NewRateLimiter(cfg.RateLimiter, cfg.RateLimiter.ServiceTokenLimits)
 	}
 
 	samlService := saml.NewSamlService(cfg, persister)
@@ -73,6 +75,7 @@ func NewPublicRouter(cfg *config.Config, persister persistence.Persister, promet
 		PasscodeRateLimiter:         passcodeRateLimiter,
 		PasswordRateLimiter:         passwordRateLimiter,
 		TokenExchangeRateLimiter:    tokenExchangeRateLimiter,
+		ServiceTokenRateLimiter:     serviceTokenRateLimiter,
 		AuthenticatorMetadata:       authenticatorMetadata,
 		AuditLogger:                 auditLogger,
 		SamlService:                 samlService,
@@ -165,6 +168,7 @@ func NewPublicRouter(cfg *config.Config, persister persistence.Persister, promet
 
 	g.POST("/user", userHandler.GetUserIdByEmail)
 	g.POST("/logout", userHandler.Logout, sessionMiddleware)
+	g.POST("/device-trust/clear", userHandler.ClearDeviceTrust, sessionMiddleware)
 
 	if cfg.Account.AllowDeletion {
 		g.DELETE("/user", userHandler.Delete, sessionMiddleware, webhookMiddleware)
