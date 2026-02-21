@@ -119,7 +119,7 @@ security_notifications:
 # Service token for pre-authenticated login flow
 # Allows trusted backends to bypass password/passkey/OTP by providing a signed JWT
 service_token:
-  secret: "k8sP2xQ7mN4vR9wF3jL6hT1yB5cA0eD"   # Shared HMAC secret with clinic-os-backend
+  secret: "CHANGE_ME_IN_PRODUCTION"   # Shared HMAC secret with clinic-os-backend
   issuer: "clinic-os-backend"                     # Expected JWT issuer (validated if set)
 
 multi_tenant:
