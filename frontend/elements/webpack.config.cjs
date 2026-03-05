@@ -40,7 +40,7 @@ module.exports = {
         type: "module",
       },
     },
-    it: {
+    nl: {
       filename: "i18n/nl.js",
       import: "./src/i18n/nl.ts",
       library: {
@@ -105,6 +105,7 @@ module.exports = {
               modules: {
                 localIdentName: "hanko_[local]",
                 localIdentContext: path.resolve(__dirname, "src"),
+                namedExport: false,
               },
               importLoaders: 1,
             },

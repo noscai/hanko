@@ -34,11 +34,15 @@ type UserInfoResponse struct {
 
 // UserJWT represents an abstracted user model for session management
 type UserJWT struct {
-	UserID   string       `json:"user_id"`
-	TenantID *string      `json:"tenant_id,omitempty"`
-	Email    *EmailJWT    `json:"email,omitempty"`
-	Username string       `json:"username"`
-	Metadata *MetadataJWT `json:"metadata,omitempty"`
+	UserID     string       `json:"user_id"`
+	TenantID   *string      `json:"tenant_id,omitempty"`
+	Email      *EmailJWT    `json:"email,omitempty"`
+	Username   string       `json:"username"`
+	Metadata   *MetadataJWT `json:"metadata,omitempty"`
+	Name       string       `json:"name"`
+	FamilyName string       `json:"family_name"`
+	GivenName  string       `json:"given_name"`
+	Picture    string       `json:"picture"`
 }
 
 func (u *UserJWT) String() string {
@@ -73,6 +77,22 @@ func UserJWTFromUserModel(userModel *models.User) UserJWT {
 		if metadataJWT != nil {
 			userJWT.Metadata = metadataJWT
 		}
+	}
+
+	if userModel.GivenName.Valid {
+		userJWT.GivenName = userModel.GivenName.String
+	}
+
+	if userModel.FamilyName.Valid {
+		userJWT.FamilyName = userModel.FamilyName.String
+	}
+
+	if userModel.Name.Valid {
+		userJWT.Name = userModel.Name.String
+	}
+
+	if userModel.Picture.Valid {
+		userJWT.Picture = userModel.Picture.String
 	}
 
 	return userJWT
