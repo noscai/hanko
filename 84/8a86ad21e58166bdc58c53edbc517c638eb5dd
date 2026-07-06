@@ -1,0 +1,29 @@
+backend/flow_api/flow/credential_usage/action_continue_with_login_identifier.go
+  s_5755ace280713b::t_9b83a428d78ddf 113-115
+  s_5755ace280713b::t_0871846546a966 172-174
+backend/config/config_multi_tenant.go
+  s_5755ace280713b::t_766178299e1c02 22-30,39
+backend/flow_api/flow/credential_usage/action_password_login.go
+  s_5755ace280713b::t_f6991b8cb65b11 97-99
+  s_5755ace280713b::t_29185dcfa03be4 75-77
+backend/flow_api/flow/credential_usage/tenant_adoption_test.go
+  s_5755ace280713b::t_5cb8bc5f6d23ce 1-58
+backend/flow_api/flow/credential_usage/tenant_adoption.go
+  s_5755ace280713b::t_b11be4086eaed7 1-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "848a86ad21e58166bdc58c53edbc517c638eb5dd",
+  "prompts": {},
+  "sessions": {
+    "s_5755ace280713b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "66455745-418b-41da-beeb-cc4640505dca",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}
