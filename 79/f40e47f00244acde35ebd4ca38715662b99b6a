@@ -1,0 +1,19 @@
+BACKWARD_COMPATIBILITY.md
+  s_5955fdfd4eb236::t_67f9af57624706 1-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "79f40e47f00244acde35ebd4ca38715662b99b6a",
+  "prompts": {},
+  "sessions": {
+    "s_5955fdfd4eb236": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f23b56f2-b8d0-4831-9890-2b3aaa8a0bc8",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}
