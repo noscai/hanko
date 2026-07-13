@@ -54,7 +54,7 @@ PR that touches `backend/persistence/migrations/` or an API/token/event contract
 
 ```md
 ### Backward Compatibility (Canary)
-- [ ] N/A — no schema change (`persistence/migrations/`) and no API/token/event contract change.
+- [ ] N/A — no schema change (`backend/persistence/migrations/`) and no API/token/event contract change.
 - [ ] This PR changes schema and/or a contract. Certified against `clinic-os/docs/guides/backward-compatibility.md`:
   - [ ] Every change is single-release safe per the matrix, OR split into expand → migrate → contract (this PR ships only the safe Expand).
   - [ ] No "additive but unsafe" change ships in one release (no new required field, no new enum value old readers can't handle, no relax-NOT-NULL with pre-existing readers, no new UNIQUE, no dropped/renamed column or response/token field).
