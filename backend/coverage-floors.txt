@@ -1,0 +1,16 @@
+# Per-file coverage floors for the ClinicOS fork delta.
+#
+# ONLY files this fork owns belong here. Gating upstream files would mean an upstream rebase
+# reddens our CI for code we did not write.
+#
+# Floors are seeded at each file's measured coverage and may only ever be RAISED. Enforced by
+# scripts/check-coverage.sh in .github/workflows/go.yml.
+#
+# Target for the Access & Setup domain (archon#1667): 95% lines on every file below.
+#
+# <path relative to backend/>                                        <minimum % lines>
+
+flow_api/flow/credential_usage/service_token.go                      0
+flow_api/flow/credential_usage/action_preauthenticated_continue.go   0
+flow_api/services/device_trust.go                                    0
+flow_api/flow/device_trust/hook_issue_trust_device_cookie.go         0
