@@ -1,0 +1,23 @@
+backend/coverage-floors.txt
+  s_f7f21bc43a412f::t_a0ca16351e0e1b 1-16
+backend/scripts/check-coverage.sh
+  s_f7f21bc43a412f::t_2d39aa2088b094 1-87
+.github/workflows/go.yml
+  s_f7f21bc43a412f::t_7555a8ccea64ac 29-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "2489c6874f8418cfc88a1a247ee85622a02b8820",
+  "prompts": {},
+  "sessions": {
+    "s_f7f21bc43a412f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0bf1efa1-d767-40a8-826b-8c18e449a5a7",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Fadlika Dita Nurjanto <fadlikadn@gmail.com>"
+    }
+  }
+}
