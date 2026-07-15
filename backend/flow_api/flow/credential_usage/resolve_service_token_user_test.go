@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/teamhanko/hanko/backend/v2/config"
+	"github.com/teamhanko/hanko/backend/v2/persistence"
 	"github.com/teamhanko/hanko/backend/v2/persistence/models"
 )
 
@@ -198,11 +199,11 @@ func TestResolveServiceTokenUser_IsInertWhenMultiTenantDisabled(t *testing.T) {
 	assert.Zero(t, lookup.adoptCalls)
 }
 
-// Compile-time proof that the real persister satisfies the narrow interface the action passes in.
-// If upstream changes UserPersister's shape, this fails at build time rather than at runtime.
-var _ serviceTokenUserLookup = (interface {
-	Get(id uuid.UUID) (*models.User, error)
-	AdoptUserToTenant(userID uuid.UUID, tenantID uuid.UUID) error
-})(nil)
+// Compile-time proof that the REAL persistence.UserPersister -- the concrete type the action
+// passes in via deps.Persister.GetUserPersisterWithConnection(...) -- satisfies the narrow
+// serviceTokenUserLookup interface. If upstream changes UserPersister.Get or AdoptUserToTenant's
+// signature, this stops compiling. (Asserting against an anonymous identical interface would be
+// tautological and would NOT catch an upstream shape change.)
+var _ serviceTokenUserLookup = persistence.UserPersister(nil)
 
 var _ = config.DefaultMultiTenantConfig
