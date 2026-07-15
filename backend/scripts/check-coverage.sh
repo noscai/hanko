@@ -10,6 +10,10 @@
 # contribute nothing to the profile, so "no tests at all" must fail a non-zero floor rather
 # than silently pass.
 #
+# NOTE: this gates Go STATEMENT coverage (what `go test -coverprofile` produces). Go's toolchain
+# has no branch-coverage mode, so — unlike the Jest/Vitest gates in clinic-os / clinic-os-admin,
+# which also enforce a 90% branch floor — there is no branch dimension here by construction.
+#
 # Usage:
 #   go test -coverprofile=coverage.out ./...
 #   ./scripts/check-coverage.sh [coverage.out] [coverage-floors.txt]
@@ -31,7 +35,8 @@ if [[ ! -f "$FLOORS" ]]; then
   exit 1
 fi
 
-# Per-file line coverage from the profile.
+# Per-file STATEMENT coverage from the profile (Go has no line/branch coverage; go tool cover
+# reports "% of statements", which is what this computes).
 #
 # Profile rows are:  <file>:<startLine>.<startCol>,<endLine>.<endCol> <numStatements> <hitCount>
 # A file's coverage is (covered statements / total statements) * 100.

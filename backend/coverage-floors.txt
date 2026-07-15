@@ -10,7 +10,7 @@
 # at 0 are covered by later streams of #1667 (device trust = S1 tasks 7-9); their floor rises when
 # that work lands. A floor stays below 95 only with a written reason, per #1667 §3.4 assumption A2.
 #
-# <path relative to backend/>                                        <minimum % lines>
+# <path relative to backend/>                                        <minimum % statements>
 
 # --- Covered by this PR (archon#1668 fix + S1 task 10) ---
 
