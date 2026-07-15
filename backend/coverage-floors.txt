@@ -27,6 +27,14 @@ flow_api/flow/credential_usage/service_token.go                      93
 # which is where the dockertest harness belongs -- deliberately kept out of the unit path (NFR-4).
 flow_api/flow/credential_usage/action_preauthenticated_continue.go   0
 
-# --- Seeded at 0; raised by #1667 S1 tasks 7-9 ---
-flow_api/services/device_trust.go                                    0
+# --- S1 tasks 7-9: device-trust codec, CheckDeviceTrust, eviction + OQ3 ---
+
+# 96.8% -- the two uncovered lines are the crypto/rand failure branches in CreateTrustedDevice and
+# GenerateRandomToken, not deterministically reachable in a unit test (A2 defensive exemption).
+flow_api/services/device_trust.go                                    95
+
+# 0% -- Execute is a flowpilot hook reachable only through a HookExecutionContext (stash, deps, tx).
+# Its decision logic is extracted to device_trust.go: eviction -> MergeDeviceTrustEntries (100%),
+# the OQ3 "disabled login writes nothing" guard -> ResolveTrustCookieEntries (100%). The remaining
+# lines are stash reads and cookie plumbing, covered by #1667 S1 task 11 (integration, dockertest).
 flow_api/flow/device_trust/hook_issue_trust_device_cookie.go         0
