@@ -6,11 +6,27 @@
 # Floors are seeded at each file's measured coverage and may only ever be RAISED. Enforced by
 # scripts/check-coverage.sh in .github/workflows/go.yml.
 #
-# Target for the Access & Setup domain (archon#1667): 95% lines on every file below.
+# Target for the Access & Setup domain (archon#1667): 95% lines on every file below. Files still
+# at 0 are covered by later streams of #1667 (device trust = S1 tasks 7-9); their floor rises when
+# that work lands. A floor stays below 95 only with a written reason, per #1667 §3.4 assumption A2.
 #
 # <path relative to backend/>                                        <minimum % lines>
 
-flow_api/flow/credential_usage/service_token.go                      0
+# --- Covered by this PR (archon#1668 fix + S1 task 10) ---
+
+# 100% -- the extracted #1668 tenant boundary and the fail-safe user resolver.
+flow_api/flow/credential_usage/tenant_boundary.go                    95
+
+# 93.8% ceiling: the `!ok || !token.Valid` branch is unreachable -- err != nil already returned,
+# and the claims type is the pointer we passed to ParseWithClaims. Exempted from 95 per A2.
+flow_api/flow/credential_usage/service_token.go                      93
+
+# 0% -- the security logic is extracted to tenant_boundary.go (resolveServiceTokenUser, 100%). What
+# remains in this file is flowpilot orchestration (rate limiter, stash writes, Initialize) that is
+# only reachable through an ExecutionContext + Postgres. Covered by #1667 S1 task 11 (integration),
+# which is where the dockertest harness belongs -- deliberately kept out of the unit path (NFR-4).
 flow_api/flow/credential_usage/action_preauthenticated_continue.go   0
+
+# --- Seeded at 0; raised by #1667 S1 tasks 7-9 ---
 flow_api/services/device_trust.go                                    0
 flow_api/flow/device_trust/hook_issue_trust_device_cookie.go         0
