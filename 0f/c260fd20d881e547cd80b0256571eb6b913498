@@ -1,0 +1,23 @@
+backend/flow_api/flow/credential_usage/action_preauthenticated_continue.go
+  s_f7f21bc43a412f::t_ce103e1be359d5 6,63-68,70-74
+backend/coverage-floors.txt
+  s_f7f21bc43a412f::t_37c31065ea8444 14-18,20,26-29,31,33-35,38
+backend/flow_api/flow/device_trust/hook_issue_trust_device_cookie.go
+  s_f7f21bc43a412f::t_ce103e1be359d5 48-54,56,59-67,70-71,75,77-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "0fc260fd20d881e547cd80b0256571eb6b913498",
+  "prompts": {},
+  "sessions": {
+    "s_f7f21bc43a412f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0bf1efa1-d767-40a8-826b-8c18e449a5a7",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Fadlika Dita Nurjanto <fadlikadn@gmail.com>"
+    }
+  }
+}
