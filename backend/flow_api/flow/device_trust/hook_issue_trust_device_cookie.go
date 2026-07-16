@@ -45,27 +45,42 @@ func (h IssueTrustDeviceCookie) Execute(c flowpilot.HookExecutionContext) error 
 	name := deps.Cfg.MFA.DeviceTrustCookieName
 	maxAge := int(deps.Cfg.MFA.DeviceTrustDuration.Seconds())
 
+	if maxAge > 0 {
+		err = deviceTrustService.CreateTrustedDevice(userID, deviceToken)
+		if err != nil {
+			return fmt.Errorf("failed to store trusted device: %w", err)
+		}
+	}
+
 	// Read existing cookie entries for multi-user support
-	var existing []services.DeviceTrustEntry
+	var entries []services.DeviceTrustEntry
 	existingCookie, _ := deps.HttpContext.Cookie(name)
 	if existingCookie != nil {
-		existing = deviceTrustService.ParseDeviceTrustCookie(existingCookie.Value)
+		entries = deviceTrustService.ParseDeviceTrustCookie(existingCookie.Value)
 	}
 
-	entries, active := services.ResolveTrustCookieEntries(existing, services.DeviceTrustEntry{
+	// Remove existing entry for this user (if any)
+	var filteredEntries []services.DeviceTrustEntry
+	for _, entry := range entries {
+		if entry.UserID.String() != userID.String() {
+			filteredEntries = append(filteredEntries, entry)
+		}
+	}
+
+	// Add new entry at the front (most recent)
+	newEntry := services.DeviceTrustEntry{
 		UserID:      userID,
 		DeviceToken: deviceToken,
-	}, deps.Cfg.MFA.DeviceTrustMaxUsersPerDevice, maxAge)
-
-	// Device trust disabled for this login (non-positive lifetime): persist nothing and leave any
-	// existing cookie untouched. Writing here is archon#1667 OQ3 -- a phantom entry that evicts a
-	// real user. ResolveTrustCookieEntries owns and unit-tests this decision.
-	if !active {
-		return nil
 	}
+	entries = append([]services.DeviceTrustEntry{newEntry}, filteredEntries...)
 
-	if err = deviceTrustService.CreateTrustedDevice(userID, deviceToken); err != nil {
-		return fmt.Errorf("failed to store trusted device: %w", err)
+	// Enforce max users limit
+	maxUsers := deps.Cfg.MFA.DeviceTrustMaxUsersPerDevice
+	if maxUsers <= 0 {
+		maxUsers = 20 // Default
+	}
+	if len(entries) > maxUsers {
+		entries = entries[:maxUsers]
 	}
 
 	// Serialize composite cookie value

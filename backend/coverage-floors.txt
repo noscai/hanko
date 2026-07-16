@@ -11,30 +11,29 @@
 # that work lands. A floor stays below 95 only with a written reason, per #1667 §3.4 assumption A2.
 #
 # <path relative to backend/>                                        <minimum % statements>
+#
+# SCOPE: this PR is a TEST HARNESS only -- it adds unit tests + this gate against the CURRENT
+# (unmodified) code. It ships NO production change. The archon#1668 tenant-boundary fix and the
+# #1667 device-trust eviction/OQ3 hardening live on their own branch (test/hanko-device-trust-s1-refactor)
+# and land as a separate refactor+fix PR, so that the safety net is in place first (#1667 §3.4).
 
-# --- Covered by this PR (archon#1668 fix + S1 task 10) ---
-
-# 100% -- the extracted #1668 tenant boundary and the fail-safe user resolver.
-flow_api/flow/credential_usage/tenant_boundary.go                    95
+# --- Pure, unit-testable functions this harness covers ---
 
 # 93.8% ceiling: the `!ok || !token.Valid` branch is unreachable -- err != nil already returned,
 # and the claims type is the pointer we passed to ParseWithClaims. Exempted from 95 per A2.
 flow_api/flow/credential_usage/service_token.go                      93
 
-# 0% -- the security logic is extracted to tenant_boundary.go (resolveServiceTokenUser, 100%). What
-# remains in this file is flowpilot orchestration (rate limiter, stash writes, Initialize) that is
-# only reachable through an ExecutionContext + Postgres. Covered by #1667 S1 task 11 (integration),
-# which is where the dockertest harness belongs -- deliberately kept out of the unit path (NFR-4).
-flow_api/flow/credential_usage/action_preauthenticated_continue.go   0
-
-# --- S1 tasks 7-9: device-trust codec, CheckDeviceTrust, eviction + OQ3 ---
-
-# 96.8% -- the two uncovered lines are the crypto/rand failure branches in CreateTrustedDevice and
-# GenerateRandomToken, not deterministically reachable in a unit test (A2 defensive exemption).
+# 96.2% -- covers the cookie codec (Parse/Serialize round-trip), CheckDeviceTrust, CreateTrustedDevice
+# and GenerateRandomToken. The two uncovered lines are the crypto/rand failure branches, not
+# deterministically reachable in a unit test (A2 defensive exemption).
 flow_api/services/device_trust.go                                    95
 
+# --- Flowpilot orchestration: integration-only, floor stays 0 until the dockertest harness lands ---
+
+# 0% -- the preauth continue action runs only through a flowpilot ExecutionContext + Postgres
+# (rate limiter, stash writes, Initialize). No unit surface; covered by #1667 S1 task 11 (integration).
+flow_api/flow/credential_usage/action_preauthenticated_continue.go   0
+
 # 0% -- Execute is a flowpilot hook reachable only through a HookExecutionContext (stash, deps, tx).
-# Its decision logic is extracted to device_trust.go: eviction -> MergeDeviceTrustEntries (100%),
-# the OQ3 "disabled login writes nothing" guard -> ResolveTrustCookieEntries (100%). The remaining
-# lines are stash reads and cookie plumbing, covered by #1667 S1 task 11 (integration, dockertest).
+# Cookie plumbing + stash reads have no unit surface; covered by #1667 S1 task 11 (integration, dockertest).
 flow_api/flow/device_trust/hook_issue_trust_device_cookie.go         0
