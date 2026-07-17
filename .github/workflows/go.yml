@@ -26,4 +26,8 @@ jobs:
 
     - name: Test
       working-directory: ./backend
-      run: go test -v ./...
+      run: go test -coverprofile=coverage.out -v ./...
+
+    - name: Check fork-delta coverage floors
+      working-directory: ./backend
+      run: ./scripts/check-coverage.sh

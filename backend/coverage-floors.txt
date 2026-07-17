@@ -1,0 +1,39 @@
+# Per-file coverage floors for the ClinicOS fork delta.
+#
+# ONLY files this fork owns belong here. Gating upstream files would mean an upstream rebase
+# reddens our CI for code we did not write.
+#
+# Floors are seeded at each file's measured coverage and may only ever be RAISED. Enforced by
+# scripts/check-coverage.sh in .github/workflows/go.yml.
+#
+# Target for the Access & Setup domain (archon#1667): 95% lines on every file below. Files still
+# at 0 are covered by later streams of #1667 (device trust = S1 tasks 7-9); their floor rises when
+# that work lands. A floor stays below 95 only with a written reason, per #1667 §3.4 assumption A2.
+#
+# <path relative to backend/>                                        <minimum % statements>
+#
+# SCOPE: this PR is a TEST HARNESS only -- it adds unit tests + this gate against the CURRENT
+# (unmodified) code. It ships NO production change. The archon#1668 tenant-boundary fix and the
+# #1667 device-trust eviction/OQ3 hardening live on their own branch (test/hanko-device-trust-s1-refactor)
+# and land as a separate refactor+fix PR, so that the safety net is in place first (#1667 §3.4).
+
+# --- Pure, unit-testable functions this harness covers ---
+
+# 93.8% ceiling: the `!ok || !token.Valid` branch is unreachable -- err != nil already returned,
+# and the claims type is the pointer we passed to ParseWithClaims. Exempted from 95 per A2.
+flow_api/flow/credential_usage/service_token.go                      93
+
+# 96.2% -- covers the cookie codec (Parse/Serialize round-trip), CheckDeviceTrust, CreateTrustedDevice
+# and GenerateRandomToken. The two uncovered lines are the crypto/rand failure branches, not
+# deterministically reachable in a unit test (A2 defensive exemption).
+flow_api/services/device_trust.go                                    95
+
+# --- Flowpilot orchestration: integration-only, floor stays 0 until the dockertest harness lands ---
+
+# 0% -- the preauth continue action runs only through a flowpilot ExecutionContext + Postgres
+# (rate limiter, stash writes, Initialize). No unit surface; covered by #1667 S1 task 11 (integration).
+flow_api/flow/credential_usage/action_preauthenticated_continue.go   0
+
+# 0% -- Execute is a flowpilot hook reachable only through a HookExecutionContext (stash, deps, tx).
+# Cookie plumbing + stash reads have no unit surface; covered by #1667 S1 task 11 (integration, dockertest).
+flow_api/flow/device_trust/hook_issue_trust_device_cookie.go         0
