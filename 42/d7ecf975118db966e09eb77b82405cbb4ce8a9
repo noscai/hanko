@@ -1,0 +1,20 @@
+backend/flow_api/flow/credential_usage/tenant_boundary_test.go
+  s_4b59cc2e2263f3::t_7944a7cc193487 209-253
+  s_4b59cc2e2263f3::t_5f965e8b588cef 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "42d7ecf975118db966e09eb77b82405cbb4ce8a9",
+  "prompts": {},
+  "sessions": {
+    "s_4b59cc2e2263f3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "448103c2-57a3-4c2a-a9da-df6758e477c1",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Fadlika Dita Nurjanto <fadlikadn@gmail.com>"
+    }
+  }
+}
