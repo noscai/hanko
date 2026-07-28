@@ -1,6 +1,7 @@
 package credential_usage
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gofrs/uuid"
@@ -203,5 +204,50 @@ func TestShouldAdoptGlobalUser(t *testing.T) {
 	t.Run("does not adopt into a malformed tenant claim", func(t *testing.T) {
 		adopt, _ := shouldAdoptGlobalUser(userIn(nil), "not-a-uuid", cfg)
 		assert.False(t, adopt)
+	})
+}
+
+// TestValidateTenantBoundary_FailsClosedOnPathologicalClaims is the monkey/fuzz pass over the
+// tenant claim. requestTenant is nil here on purpose, so the request-tenant check is skipped and
+// the ONLY thing standing between each of these strings and a cross-tenant login is the core
+// #1668 line -- claimedTenant vs the resolved user's tenant. None of these is a valid
+// representation of tenantA (the user's tenant), so whatever garbage a secret-holder stuffs into
+// tenant_id, the boundary must fail closed. The control at the end proves the set rejects "wrong",
+// not "everything".
+func TestValidateTenantBoundary_FailsClosedOnPathologicalClaims(t *testing.T) {
+	pathological := map[string]string{
+		"whitespace-padded uuid":  "  " + tenantA.String() + "  ",
+		"trailing newline":        tenantA.String() + "\n",
+		"embedded null byte":      tenantA.String() + "\x00",
+		"ten-thousand chars":      strings.Repeat("a", 10000),
+		"unicode lookalikes":      "🄰-not-a-🄱🄲🄳-uuid-🄴🄵🄶🄷",
+		"sql injection":           "'; DROP TABLE users;--",
+		"empty-ish whitespace":    "   ",
+		"too short":               "aaaa",
+		"nil uuid (zero value)":   uuid.Nil.String(),
+		"the user id as tenant":   userID.String(),
+		"another tenant entirely": tenantB.String(),
+	}
+
+	for name, claim := range pathological {
+		t.Run(name, func(t *testing.T) {
+			err := validateTenantBoundary(
+				&ServiceTokenClaims{UserID: userID.String(), TenantID: claim},
+				userIn(&tenantA),
+				nil,
+				multiTenantOn(),
+			)
+			require.Error(t, err, "MUST fail closed: %q is not tenantA and must never resolve", claim)
+		})
+	}
+
+	t.Run("canonical exact match is still allowed (control)", func(t *testing.T) {
+		err := validateTenantBoundary(
+			&ServiceTokenClaims{UserID: userID.String(), TenantID: tenantA.String()},
+			userIn(&tenantA),
+			nil,
+			multiTenantOn(),
+		)
+		require.NoError(t, err, "the fuzz set must reject WRONG tenants, not the right one")
 	})
 }
