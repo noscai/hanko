@@ -28,6 +28,11 @@ flow_api/flow/credential_usage/service_token.go                      93
 # deterministically reachable in a unit test (A2 defensive exemption).
 flow_api/services/device_trust.go                                    95
 
+# 100% -- pure tenant-boundary decision logic (validateTenantBoundary, shouldAdoptGlobalUser,
+# resolveServiceTokenUser). Extracted from the flow action so the #1668 cross-tenant check is
+# assertable without dockertest + a live Postgres.
+flow_api/flow/credential_usage/tenant_boundary.go                    95
+
 # --- Flowpilot orchestration: integration-only, floor stays 0 until the dockertest harness lands ---
 
 # 0% -- the preauth continue action runs only through a flowpilot ExecutionContext + Postgres

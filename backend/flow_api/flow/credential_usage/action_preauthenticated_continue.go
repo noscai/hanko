@@ -3,7 +3,6 @@ package credential_usage
 import (
 	"fmt"
 
-	"github.com/gofrs/uuid"
 	"github.com/teamhanko/hanko/backend/v2/flow_api/flow/shared"
 	"github.com/teamhanko/hanko/backend/v2/flowpilot"
 	"github.com/teamhanko/hanko/backend/v2/rate_limiter"
@@ -60,18 +59,17 @@ func (a PreAuthenticatedContinue) Execute(c flowpilot.ExecutionContext) error {
 		return c.Error(flowpilot.ErrorFormDataInvalid.Wrap(fmt.Errorf("service token validation failed: %w", err)))
 	}
 
-	userID := uuid.FromStringOrNil(claims.UserID)
-	if userID.IsNil() {
-		return c.Error(flowpilot.ErrorFormDataInvalid.Wrap(fmt.Errorf("invalid user_id in service token")))
-	}
-
-	userModel, err := deps.Persister.GetUserPersisterWithConnection(deps.Tx).Get(userID)
+	// resolveServiceTokenUser enforces the tenant boundary (archon#1668) and is the only way to
+	// obtain a user on this path. It runs before every stash write below -- those writes are what
+	// seed trusted identity for the rest of the flow, including a fresh WebAuthn registration.
+	userModel, err := resolveServiceTokenUser(
+		claims,
+		deps.Persister.GetUserPersisterWithConnection(deps.Tx),
+		deps.TenantID,
+		deps.Cfg.MultiTenant,
+	)
 	if err != nil {
-		return c.Error(flowpilot.ErrorFormDataInvalid.Wrap(fmt.Errorf("failed to get user: %w", err)))
-	}
-
-	if userModel == nil {
-		return c.Error(flowpilot.ErrorFormDataInvalid.Wrap(fmt.Errorf("user not found")))
+		return c.Error(flowpilot.ErrorFormDataInvalid.Wrap(err))
 	}
 
 	_ = c.Stash().Set(shared.StashPathUserID, userModel.ID.String())
