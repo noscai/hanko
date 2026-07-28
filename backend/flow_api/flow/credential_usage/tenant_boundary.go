@@ -121,14 +121,29 @@ func resolveServiceTokenUser(
 	}
 
 	if err := validateTenantBoundary(claims, user, requestTenantID, cfg); err != nil {
-		return nil, fmt.Errorf("user not found: %w", err)
+		// Bare, detail-free: a foreign-tenant user must be indistinguishable from a missing one at
+		// EVERY layer, including a debug-mode caller that surfaces the wrapped cause. Wrapping the
+		// boundary reason here (%w) would let a secret-holder enumerate user IDs across tenants.
+		return nil, fmt.Errorf("user not found")
 	}
 
 	if adopt, tenant := shouldAdoptGlobalUser(user, claims.TenantID, cfg); adopt {
 		if err := users.AdoptUserToTenant(user.ID, tenant); err != nil {
 			return nil, fmt.Errorf("failed to adopt user to tenant: %w", err)
 		}
-		user.TenantID = &tenant
+
+		// AdoptUserToTenant is a conditional UPDATE (... WHERE tenant_id IS NULL). A concurrent
+		// pre-auth flow may have adopted this global user into a DIFFERENT tenant first, in which
+		// case our UPDATE matched zero rows and `user` is now stale. The database is authoritative:
+		// re-read the row and re-check the boundary, so a race cannot pre-authenticate the user into
+		// a tenant they no longer belong to. Setting the stale model to the claimed tenant would.
+		user, err = users.Get(user.ID)
+		if err != nil || user == nil {
+			return nil, fmt.Errorf("user not found")
+		}
+		if err := validateTenantBoundary(claims, user, requestTenantID, cfg); err != nil {
+			return nil, fmt.Errorf("user not found")
+		}
 	}
 
 	return user, nil

@@ -27,6 +27,11 @@ type fakeUserLookup struct {
 	adoptedTenant uuid.UUID
 	adoptCalls    int
 	adoptErr      error
+
+	// concurrentAdoptTenant models a race: a concurrent pre-auth flow has already adopted this
+	// global user into this tenant, so our conditional UPDATE (... WHERE tenant_id IS NULL) matches
+	// zero rows and the persisted tenant is the concurrent winner, not the one we asked for.
+	concurrentAdoptTenant *uuid.UUID
 }
 
 func (f *fakeUserLookup) Get(id uuid.UUID) (*models.User, error) {
@@ -40,7 +45,19 @@ func (f *fakeUserLookup) AdoptUserToTenant(userID uuid.UUID, tenantID uuid.UUID)
 	f.adoptCalls++
 	f.adoptedUser = userID
 	f.adoptedTenant = tenantID
-	return f.adoptErr
+	if f.adoptErr != nil {
+		return f.adoptErr
+	}
+	// Mirror the real conditional UPDATE against the DB the next Get reads back.
+	if f.user != nil && f.user.TenantID == nil {
+		if f.concurrentAdoptTenant != nil {
+			f.user.TenantID = f.concurrentAdoptTenant // 0 rows updated; concurrent flow won
+		} else {
+			t := tenantID
+			f.user.TenantID = &t
+		}
+	}
+	return nil
 }
 
 func claimsFor(userID uuid.UUID, tenantID string) *ServiceTokenClaims {
@@ -75,8 +92,33 @@ func TestResolveServiceTokenUser_ForeignTenantIsIndistinguishableFromMissingUser
 
 	require.Error(t, foreignErr)
 	require.Error(t, missingErr)
-	assert.Contains(t, foreignErr.Error(), "user not found")
-	assert.Contains(t, missingErr.Error(), "user not found")
+	// Byte-identical, not merely both "containing" the phrase: a wrapped boundary reason (%w) would
+	// let a debug-mode caller tell the two apart and enumerate user IDs across tenants (cubic P2).
+	assert.Equal(t, missingErr.Error(), foreignErr.Error())
+	assert.Equal(t, "user not found", foreignErr.Error())
+}
+
+// A NULL-tenant global user is adopted into the claimed tenant, but AdoptUserToTenant is a
+// conditional UPDATE. If a concurrent flow adopted the same user into a DIFFERENT tenant first, our
+// UPDATE matches zero rows; trusting the stale in-memory model would pre-authenticate the user into
+// a tenant they no longer belong to. The resolver must re-read and re-check, and reject (cubic P1).
+func TestResolveServiceTokenUser_RejectsConcurrentCrossTenantAdoption(t *testing.T) {
+	lookup := &fakeUserLookup{
+		user:                  &models.User{ID: userID, TenantID: nil},
+		concurrentAdoptTenant: &tenantB, // a concurrent flow won the adoption into tenant B
+	}
+
+	user, err := resolveServiceTokenUser(
+		claimsFor(userID, tenantA.String()), // we claim tenant A
+		lookup,
+		&tenantA,
+		multiTenantOn(),
+	)
+
+	require.Error(t, err, "a user concurrently adopted into another tenant must not be returned")
+	assert.Nil(t, user)
+	assert.Equal(t, "user not found", err.Error(), "must stay indistinguishable")
+	assert.Equal(t, 1, lookup.adoptCalls)
 }
 
 // THE GUARD. The legitimate pre-authenticated login that verify-pin depends on must keep working.
