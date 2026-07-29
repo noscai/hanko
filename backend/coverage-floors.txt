@@ -47,3 +47,39 @@ flow_api/flow/credential_usage/action_preauthenticated_continue.go   94
 # user id, persist failure, existing-cookie merge). The one uncovered line is the crypto/rand
 # failure branch in GenerateRandomToken, not deterministically reachable in a unit test (A2).
 flow_api/flow/device_trust/hook_issue_trust_device_cookie.go         95
+
+# --- Adjacent auth-flow files (archon#1874 P6) ---
+
+# 100% -- the multi-tenant resolution middleware that populates deps.TenantID for the #1668 path:
+# header parse, existing/disabled tenant, auto-provision on/off + create failure, global-user gate,
+# and the GetTenantID/GetTenant accessors, all driven through a faked TenantPersister.
+middleware/tenant.go                                                 95
+
+# 90.6% -- Limit / Limit2 (allow + deny + stopped-store error) and every CreateRateLimit*Key builder,
+# plus NewRateLimiter's in-memory and redis constructors. The 3 uncovered statements are the redis
+# Dial closure (only runs on a live dial, never in a unit test) and the two log.Fatal branches after
+# memorystore/redisstore.New, which only fire on a nil config -- not deterministically reachable
+# (A2 defensive exemption). Floored at the honest achieved value < 95.
+rate_limiter/rate_limiter.go                                         90
+
+# 95.8% -- NewManager SameSite mapping (lax/strict/none/default) + audience, GenerateJWT (template,
+# username, tenant_id claim, WithValue option, sign failure), GenerateCookie, Verify, DeleteCookie.
+# The two uncovered lines are the crypto/rand session-id failure and the ProcessJWTTemplate error
+# return (that function never returns non-nil) -- neither reachable in a unit test (A2 defensive).
+session/session.go                                                   95
+
+# 96.8% -- PasswordLogin.Execute driven through the fake flowpilot ExecutionContext: invalid input,
+# rate-limit allow/deny/error, email + username lookup (found / not-found / global-adopt / adopt-error
+# / lookup-error), wrong-password audit + audit-error, verify-error, hook-error, happy path. The two
+# uncovered lines are the defensive `err != nil` returns after Stash().Set / Payload().Set, which do
+# not fail on an in-memory sjson path (A2 defensive exemption).
+flow_api/flow/credential_usage/action_password_login.go              95
+
+# 93.3% -- ContinueWithLoginIdentifier.Initialize + Execute through the fake context: identifier /
+# email-only / username-only analysis, SAML redirect + auth-url error, email & username resolution
+# (found / unknown+hints / global-adopt / adopt-error / lookup-error / get-error / audit-error),
+# both privacy modes incl. the OnlyShowActualLoginMethods chooser / passcode / password / passkey
+# branches, and the discontinuity errors. The 11 uncovered statements are all defensive `err != nil`
+# returns after Stash().Set / Payload().Set, none of which fail on an in-memory sjson path (A2
+# defensive exemption). Floored at the honest achieved value < 95.
+flow_api/flow/credential_usage/action_continue_with_login_identifier.go 93
