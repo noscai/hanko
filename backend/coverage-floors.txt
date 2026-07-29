@@ -33,12 +33,17 @@ flow_api/services/device_trust.go                                    95
 # assertable without dockertest + a live Postgres.
 flow_api/flow/credential_usage/tenant_boundary.go                    95
 
-# --- Flowpilot orchestration: integration-only, floor stays 0 until the dockertest harness lands ---
+# --- Flowpilot orchestration: driven through the fake-context harness (flowpilot/mock_context.go, archon#1874 P1) ---
 
-# 0% -- the preauth continue action runs only through a flowpilot ExecutionContext + Postgres
-# (rate limiter, stash writes, Initialize). No unit surface; covered by #1667 S1 task 11 (integration).
-flow_api/flow/credential_usage/action_preauthenticated_continue.go   0
+# 94.7% -- Execute driven through a fake flowpilot ExecutionContext (accept / #1668 cross-tenant
+# reject / invalid-token / rate-limit / global-user-adopt paths) plus GetName/GetDescription/
+# Initialize. The two uncovered lines are the defensive `err != nil` returns after Limit2 and
+# Payload().Set -- neither errors with an in-memory limiter store / sjson on a valid path (A2
+# defensive exemption). Floored at the honest achieved value < 95.
+flow_api/flow/credential_usage/action_preauthenticated_continue.go   94
 
-# 0% -- Execute is a flowpilot hook reachable only through a HookExecutionContext (stash, deps, tx).
-# Cookie plumbing + stash reads have no unit surface; covered by #1667 S1 task 11 (integration, dockertest).
-flow_api/flow/device_trust/hook_issue_trust_device_cookie.go         0
+# 97.1% -- Execute driven through a fake flowpilot HookExecutionContext (OQ3 non-positive-duration
+# no-write guard, active-write happy path, policy never/prompt short-circuits, missing/malformed
+# user id, persist failure, existing-cookie merge). The one uncovered line is the crypto/rand
+# failure branch in GenerateRandomToken, not deterministically reachable in a unit test (A2).
+flow_api/flow/device_trust/hook_issue_trust_device_cookie.go         95
