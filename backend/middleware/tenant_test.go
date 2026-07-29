@@ -170,6 +170,14 @@ func TestTenant_UnknownTenant_AutoProvision_CreatesTenant(t *testing.T) {
 	assert.True(t, tp.created.Enabled, "auto-provisioned tenant must be enabled")
 	require.NotNil(t, GetTenantID(c))
 	assert.Equal(t, testTenantID, *GetTenantID(c))
+	// The middleware stores the FULL tenant object after auto-provision
+	// (tenant.go: c.Set(TenantContextKey, tenant)), not just its id. Assert
+	// GetTenant(c) too, so a regression that stops storing the object — leaving
+	// downstream handlers with a nil tenant — is caught (cubic P3).
+	provisioned := GetTenant(c)
+	require.NotNil(t, provisioned, "auto-provision must store the full tenant object in context")
+	assert.Equal(t, testTenantID, provisioned.ID)
+	assert.True(t, provisioned.Enabled, "the stored tenant must be enabled")
 }
 
 // Unknown tenant + auto-provision enabled but Create fails -> 500.
