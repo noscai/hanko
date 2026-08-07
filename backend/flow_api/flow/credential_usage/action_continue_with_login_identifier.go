@@ -110,8 +110,9 @@ func (a ContinueWithLoginIdentifier) Execute(c flowpilot.ExecutionContext) error
 
 		// If we found an email, get the associated user
 		if emailModel != nil && emailModel.UserID != nil {
-			// If this is a global user and we have a tenant, adopt them
-			if isGlobalFallback && deps.TenantID != nil {
+			// If this is a global user and we have a tenant, adopt them (unless the
+			// deployment keeps users global for cross-tenant org switching).
+			if shouldAdoptUserToTenant(isGlobalFallback, deps.TenantID, deps.Cfg.MultiTenant.KeepUsersGlobal) {
 				err = deps.Persister.GetUserPersisterWithConnection(deps.Tx).AdoptUserToTenant(*emailModel.UserID, *deps.TenantID)
 				if err != nil {
 					return fmt.Errorf("failed to adopt user to tenant: %w", err)
@@ -168,8 +169,9 @@ func (a ContinueWithLoginIdentifier) Execute(c flowpilot.ExecutionContext) error
 
 		// If we found a username, get the associated user
 		if usernameModel != nil {
-			// If this is a global user and we have a tenant, adopt them
-			if isGlobalFallback && deps.TenantID != nil {
+			// If this is a global user and we have a tenant, adopt them (unless the
+			// deployment keeps users global for cross-tenant org switching).
+			if shouldAdoptUserToTenant(isGlobalFallback, deps.TenantID, deps.Cfg.MultiTenant.KeepUsersGlobal) {
 				err = deps.Persister.GetUserPersisterWithConnection(deps.Tx).AdoptUserToTenant(usernameModel.UserId, *deps.TenantID)
 				if err != nil {
 					return fmt.Errorf("failed to adopt user to tenant: %w", err)
