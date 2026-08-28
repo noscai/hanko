@@ -28,6 +28,12 @@ const (
 	// DefaultMaxUsersPerDevice is the fallback cap on how many users may trust one device when
 	// DeviceTrustMaxUsersPerDevice is unset or non-positive.
 	DefaultMaxUsersPerDevice = 20
+	// deviceTokenPrefix marks a v2 device-scoped cookie value. base64.URLEncoding never produces
+	// ".", ":" or "|", so this prefix makes v0 (bare token), v1 (composite) and v2 mutually
+	// exclusive by construction -- without it, a v2 value would be misread by
+	// ParseDeviceTrustCookie's separator sniffing as a v0 legacy token and matched against one
+	// arbitrary DB row, silently breaking trust for every other user on a shared device.
+	deviceTokenPrefix = "d1."
 )
 
 // MergeDeviceTrustEntries computes the trust-cookie entry list after a user (re)trusts a device.
@@ -189,6 +195,22 @@ func (s DeviceTrustService) ParseDeviceTrustCookie(cookieValue string) []DeviceT
 	}
 
 	return entries
+}
+
+// ParseDeviceCookieToken decodes a v2 device-scoped cookie value ("d1.<token>") into its bare
+// token. A pure function, deliberately independent of DeviceTrustService (no receiver, no DB, no
+// echo context) so the v0/v1/v2 discrimination rule stays testable in isolation from the rest of
+// the cookie machinery.
+//
+// Rejects an empty remainder ("d1." -> ("", false)) rather than returning ok=true with an empty
+// token: an empty token must never reach FindByDeviceToken, where it could match a row created
+// with an empty DeviceToken instead of failing closed.
+func ParseDeviceCookieToken(cookieValue string) (token string, ok bool) {
+	rest, found := strings.CutPrefix(cookieValue, deviceTokenPrefix)
+	if !found || rest == "" {
+		return "", false
+	}
+	return rest, true
 }
 
 // SerializeDeviceTrustCookie serializes device trust entries into a composite cookie value.

@@ -359,3 +359,66 @@ func TestMergeDeviceTrustEntries_NonPositiveMaxUsersFallsBackToDefault(t *testin
 		assert.Equal(t, acting, merged[0])
 	}
 }
+
+// ---- ParseDeviceCookieToken: v2 device-scoped cookie decode ----
+
+// TestParseDeviceCookieToken exercises the "d1." prefix that makes the v2 device-scoped cookie
+// format unambiguous against v0 (bare token) and v1 (composite) values. Without the prefix,
+// ParseDeviceTrustCookie's separator-based sniffing would misread a v2 value as v0 and route it
+// to a single-row lookup, silently breaking trust for every other user on a shared device.
+func TestParseDeviceCookieToken(t *testing.T) {
+	uid := uuid.Must(uuid.NewV4())
+	token := randToken(t)
+
+	tests := []struct {
+		name        string
+		cookieValue string
+		wantToken   string
+		wantOK      bool
+	}{
+		{
+			name:        "v2 device-scoped cookie decodes to its token",
+			cookieValue: deviceTokenPrefix + token,
+			wantToken:   token,
+			wantOK:      true,
+		},
+		{
+			name:        "prefix with empty remainder is rejected, never an empty token",
+			cookieValue: deviceTokenPrefix,
+			wantToken:   "",
+			wantOK:      false,
+		},
+		{
+			name:        "v0 legacy bare token has no prefix",
+			cookieValue: token,
+			wantToken:   "",
+			wantOK:      false,
+		},
+		{
+			name:        "v1 composite cookie is not a v2 value",
+			cookieValue: uid.String() + fieldSeparator + token + entrySeparator + uid.String() + fieldSeparator + token,
+			wantToken:   "",
+			wantOK:      false,
+		},
+		{
+			name:        "empty string",
+			cookieValue: "",
+			wantToken:   "",
+			wantOK:      false,
+		},
+		{
+			name:        "prefix appears mid-string but value does not start with it",
+			cookieValue: "x" + deviceTokenPrefix + token,
+			wantToken:   "",
+			wantOK:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotToken, gotOK := ParseDeviceCookieToken(tt.cookieValue)
+			assert.Equal(t, tt.wantOK, gotOK)
+			assert.Equal(t, tt.wantToken, gotToken)
+		})
+	}
+}
