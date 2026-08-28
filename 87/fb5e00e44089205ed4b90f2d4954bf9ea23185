@@ -1,0 +1,29 @@
+backend/flow_api/flow/device_trust/hook_issue_trust_device_cookie.go
+  s_e192dd3b10b3fa::t_fa3582f4abdc29 25
+  s_e192dd3b10b3fa::t_03ae0ec9493302 8
+  s_e192dd3b10b3fa::t_01e221812db016 95-113,115-120
+  s_e192dd3b10b3fa::t_a861547799b18c 114
+  s_e192dd3b10b3fa::t_19b34abef8312c 18-24
+  s_e192dd3b10b3fa::t_659fbaafd36224 26
+backend/flow_api/flow/device_trust/hook_issue_trust_device_cookie_test.go
+  s_e192dd3b10b3fa::t_3fdcb6066335a0 492-603,608-652
+  s_e192dd3b10b3fa::t_3fc6601551c3af 604-607
+  s_e192dd3b10b3fa::t_56f696304a80d7 386-392
+  s_e192dd3b10b3fa::t_749eed41f81e80 4,6,16-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "87fb5e00e44089205ed4b90f2d4954bf9ea23185",
+  "prompts": {},
+  "sessions": {
+    "s_e192dd3b10b3fa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "017a763e-b10b-4355-bc95-e83a7a308e92",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Fadlika Dita Nurjanto <fadlikadn@gmail.com>"
+    }
+  }
+}
