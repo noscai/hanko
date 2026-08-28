@@ -1,0 +1,21 @@
+backend/flow_api/services/device_trust.go
+  s_e192dd3b10b3fa::t_e162edd3c9ff5a 200-207,210-212
+backend/flow_api/services/device_trust_test.go
+  s_e192dd3b10b3fa::t_93d47317443725 363,365,369,419
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "831f20374dda3071a7bcae001947a220be600d2e",
+  "prompts": {},
+  "sessions": {
+    "s_e192dd3b10b3fa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "017a763e-b10b-4355-bc95-e83a7a308e92",
+        "model": "unknown"
+      },
+      "human_author": "Fadlika Dita Nurjanto <fadlikadn@gmail.com>"
+    }
+  }
+}
