@@ -600,100 +600,33 @@ func TestGenerateRandomToken(t *testing.T) {
 	assert.NotEmpty(t, a)
 }
 
-// ---- MergeDeviceTrustEntries: the eviction boundary (invariant I3 / E1) ----
-
-func makeEntries(t *testing.T, n int) []DeviceTrustEntry {
-	t.Helper()
-	out := make([]DeviceTrustEntry, n)
-	for i := range out {
-		out[i] = DeviceTrustEntry{UserID: uuid.Must(uuid.NewV4()), DeviceToken: fmt.Sprintf("tok-%d", i)}
-	}
-	return out
-}
-
-func TestMergeDeviceTrustEntries_ActingUserAlwaysSurvives(t *testing.T) {
-	const maxUsers = 20
-
-	for _, existingCount := range []int{0, 1, 19, 20, 21} {
-		t.Run(fmt.Sprintf("%d_existing_users", existingCount), func(t *testing.T) {
-			existing := makeEntries(t, existingCount)
-			acting := DeviceTrustEntry{UserID: uuid.Must(uuid.NewV4()), DeviceToken: "acting-token"}
-
-			merged := MergeDeviceTrustEntries(existing, acting, maxUsers)
-
-			require.LessOrEqual(t, len(merged), maxUsers, "never exceeds the cap")
-			assert.Equal(t, acting, merged[0], "the acting user is always first and therefore always survives truncation")
-
-			if existingCount >= maxUsers {
-				assert.Len(t, merged, maxUsers)
-				// The oldest existing entry (last in the input) must have been evicted.
-				oldest := existing[existingCount-1]
-				for _, e := range merged {
-					assert.NotEqual(t, oldest, e, "the oldest entry is the one evicted")
-				}
-			}
-		})
-	}
-}
-
-func TestMergeDeviceTrustEntries_ReTrustReplacesOwnEntry(t *testing.T) {
-	uid := uuid.Must(uuid.NewV4())
-	existing := []DeviceTrustEntry{
-		{UserID: uid, DeviceToken: "old-token"},
-		{UserID: uuid.Must(uuid.NewV4()), DeviceToken: "other"},
-	}
-	acting := DeviceTrustEntry{UserID: uid, DeviceToken: "new-token"}
-
-	merged := MergeDeviceTrustEntries(existing, acting, 20)
-
-	count := 0
-	for _, e := range merged {
-		if e.UserID == uid {
-			count++
-			assert.Equal(t, "new-token", e.DeviceToken, "the user's own entry is replaced, not duplicated")
-		}
-	}
-	assert.Equal(t, 1, count, "re-trusting must not duplicate the user's entry")
-	assert.Equal(t, acting, merged[0])
-}
-
-// ---- OQ3: device trust disabled for the login must write nothing (archon#1667) ----
-
-func TestResolveTrustCookieEntries(t *testing.T) {
-	existing := makeEntries(t, 20)
-	acting := DeviceTrustEntry{UserID: uuid.Must(uuid.NewV4()), DeviceToken: "acting"}
-
-	t.Run("positive lifetime is active and merges normally", func(t *testing.T) {
-		entries, active := ResolveTrustCookieEntries(existing, acting, 20, 3600)
-		require.True(t, active)
-		assert.Equal(t, acting, entries[0])
-		assert.Len(t, entries, 20)
-	})
-
-	// OQ3: the regression guard. Before the fix, a zero lifetime still wrote a phantom entry that
-	// evicted a real user. It must now write nothing.
-	t.Run("zero lifetime is inactive and writes nothing", func(t *testing.T) {
-		entries, active := ResolveTrustCookieEntries(existing, acting, 20, 0)
-		assert.False(t, active, "zero lifetime must not write a cookie -- archon#1667 OQ3")
-		assert.Nil(t, entries, "no phantom entry may be produced")
-	})
-
-	t.Run("negative lifetime is inactive", func(t *testing.T) {
-		_, active := ResolveTrustCookieEntries(existing, acting, 20, -1)
-		assert.False(t, active)
-	})
-}
-
-func TestMergeDeviceTrustEntries_NonPositiveMaxUsersFallsBackToDefault(t *testing.T) {
-	existing := makeEntries(t, 25)
-	acting := DeviceTrustEntry{UserID: uuid.Must(uuid.NewV4()), DeviceToken: "acting"}
-
-	for _, maxUsers := range []int{0, -1} {
-		merged := MergeDeviceTrustEntries(existing, acting, maxUsers)
-		assert.Len(t, merged, DefaultMaxUsersPerDevice, "non-positive maxUsers falls back to the documented default of 20")
-		assert.Equal(t, acting, merged[0])
-	}
-}
+// ---- MergeDeviceTrustEntries / ResolveTrustCookieEntries: retired ----
+//
+// This block used to hold TestMergeDeviceTrustEntries_ActingUserAlwaysSurvives,
+// TestMergeDeviceTrustEntries_ReTrustReplacesOwnEntry,
+// TestMergeDeviceTrustEntries_NonPositiveMaxUsersFallsBackToDefault, and
+// TestResolveTrustCookieEntries, asserting the capped composite-cookie merge/truncate model and
+// its archon#1667 OQ3 maxAgeSeconds<=0 guard. That model is retired -- as of 303da1b1/87fb5e00 the
+// write path builds no composite cookie at all -- and MergeDeviceTrustEntries /
+// ResolveTrustCookieEntries were deleted alongside these tests as dead code with zero production
+// callers (grep-verified).
+//
+// ActingUserAlwaysSurvives in particular is the test that let the original incident ship: it
+// proved only that the *acting* user survives truncation, which is trivially true because the
+// acting user is placed first -- it never asserted that an already-trusted, non-acting user also
+// survives a 21st user trusting, which is the case that actually broke. The real replacement is
+// end-to-end, in flow_api/flow/device_trust/device_trust_end_to_end_integration_test.go:
+// TestRegression_TwentyFirstUserDoesNotEvictTheFirstFromTheBrowser drives 20 users trusting, a
+// 21st trusting, and asserts user 1 (non-acting) is still trusted, against a real hook and real
+// Postgres; TestInvariant_EveryUnexpiredRowStaysReachableFromTheBrowserThatCreatedIt generalizes
+// that to random trust sequences up to 200 users. Both were confirmed to fail when the original
+// defect was reintroduced.
+//
+// The OQ3 guard (archon#1667: a non-positive trust lifetime must write no cookie and persist no
+// row) now lives inline in the hook (hook_issue_trust_device_cookie.go, `if maxAge <= 0`) and is
+// covered live by TestIssueTrustDeviceCookie_Execute_WritesNothingWhenDurationNonPositive in
+// hook_issue_trust_device_cookie_test.go -- so removing the service-level guard test does not
+// drop live coverage.
 
 // ---- ParseDeviceIDCookie: v2 device-scoped cookie decode (archon#2528) ----
 

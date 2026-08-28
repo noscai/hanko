@@ -25,9 +25,6 @@ const (
 	entrySeparator = "|"
 	// fieldSeparator separates user ID from token within an entry
 	fieldSeparator = ":"
-	// DefaultMaxUsersPerDevice is the fallback cap on how many users may trust one device when
-	// DeviceTrustMaxUsersPerDevice is unset or non-positive.
-	DefaultMaxUsersPerDevice = 20
 	// deviceTokenPrefix marks a v2 device-scoped cookie value. base64.URLEncoding never produces
 	// ".", ":" or "|", so this prefix makes v0 (bare token), v1 (composite) and v2 mutually
 	// exclusive by construction -- without it, a v2 value would be misread by
@@ -36,51 +33,19 @@ const (
 	deviceTokenPrefix = "d1."
 )
 
-// MergeDeviceTrustEntries computes the trust-cookie entry list after a user (re)trusts a device.
-//
-// Extracted from the flowpilot hook (archon#1667 §4.5) so the single most safety-relevant rule on
-// a shared clinic device -- who is evicted when user 21 trusts it, and does the person logging in
-// survive? -- is assertable without a flowpilot context or a database.
-//
-// The acting user's entry is always placed first, so the len>maxUsers truncation can only ever
-// evict the OLDEST entries and never the user currently logging in (invariant I3). Re-trusting
-// replaces the user's own prior entry rather than duplicating it.
-func MergeDeviceTrustEntries(existing []DeviceTrustEntry, newEntry DeviceTrustEntry, maxUsers int) []DeviceTrustEntry {
-	if maxUsers <= 0 {
-		maxUsers = DefaultMaxUsersPerDevice
-	}
-
-	merged := make([]DeviceTrustEntry, 0, len(existing)+1)
-	merged = append(merged, newEntry)
-	for _, entry := range existing {
-		if entry.UserID != newEntry.UserID {
-			merged = append(merged, entry)
-		}
-	}
-
-	if len(merged) > maxUsers {
-		merged = merged[:maxUsers]
-	}
-
-	return merged
-}
-
-// ResolveTrustCookieEntries decides what the device-trust cookie should become for a login, or
-// reports that it must not be written at all.
-//
-// When the trust lifetime is not positive, device trust is disabled for this login: it returns
-// (nil, false) so the caller persists nothing and leaves any existing cookie untouched. Writing
-// entries in that state is archon#1667 OQ3 -- the hook used to prepend a token that was never
-// stored and truncate a real user off the end, a phantom entry that evicts a genuinely-trusted
-// user while never validating itself. Concretely reachable only at maxAgeSeconds == 0 (Go renders
-// a negative cookie MaxAge as immediate deletion). Not prod-reachable -- every cluster sets 168h --
-// but a config change to 0 would trigger it, so the guard is enforced here, not left implicit.
-func ResolveTrustCookieEntries(existing []DeviceTrustEntry, newEntry DeviceTrustEntry, maxUsers, maxAgeSeconds int) (entries []DeviceTrustEntry, active bool) {
-	if maxAgeSeconds <= 0 {
-		return nil, false
-	}
-	return MergeDeviceTrustEntries(existing, newEntry, maxUsers), true
-}
+// MergeDeviceTrustEntries and ResolveTrustCookieEntries (the capped-cookie merge/truncate model,
+// and its archon#1667 OQ3 maxAgeSeconds<=0 guard) were removed here: as of 303da1b1/87fb5e00 the
+// write path no longer builds a composite cookie at all, so both had zero production callers.
+// Their replacement lives in flow_api/flow/device_trust/hook_issue_trust_device_cookie.go, whose
+// own maxAge<=0 guard (line ~67) is covered by
+// TestIssueTrustDeviceCookie_Execute_WritesNothingWhenDurationNonPositive, and whose eviction
+// behaviour is proven end-to-end by
+// TestRegression_TwentyFirstUserDoesNotEvictTheFirstFromTheBrowser and
+// TestInvariant_EveryUnexpiredRowStaysReachableFromTheBrowserThatCreatedIt in
+// device_trust_end_to_end_integration_test.go. ParseDeviceTrustCookie and
+// SerializeDeviceTrustCookie stay: the former is still read by checkComposite during the v1
+// migration window, and the latter still backs TestDeviceTrustCookie_RoundTrip, which documents an
+// invariant (I1) about that still-live parser.
 
 type DeviceTrustService struct {
 	Persister   persistence.TrustedDevicePersister
