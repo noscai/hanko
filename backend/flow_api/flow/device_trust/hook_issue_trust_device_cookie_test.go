@@ -48,6 +48,12 @@ func (f *fakeTrustedDevicePersister) FindByDeviceToken(string) (*models.TrustedD
 	return nil, nil
 }
 
+// FindValidTrust is likewise unused on the issue path -- stubbed only to satisfy
+// persistence.TrustedDevicePersister.
+func (f *fakeTrustedDevicePersister) FindValidTrust(string, uuid.UUID, time.Time) (*models.TrustedDevice, error) {
+	return nil, nil
+}
+
 // fakeTrustPersister satisfies persistence.Persister via embedding; only the accessor the hook
 // calls -- GetTrustedDevicePersisterWithConnection -- is real.
 type fakeTrustPersister struct {

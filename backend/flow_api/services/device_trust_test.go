@@ -50,6 +50,20 @@ func (f *fakeTrustedDevicePersister) FindByDeviceToken(token string) (*models.Tr
 	return f.byToken[token], nil
 }
 
+// FindValidTrust mirrors the real persister's (device_token, user_id, expires_at > now)
+// filter against this fake's in-memory store. Unused by the current tests in this file (none
+// call it yet), but must satisfy persistence.TrustedDevicePersister to keep this fake compiling.
+func (f *fakeTrustedDevicePersister) FindValidTrust(deviceToken string, userID uuid.UUID, now time.Time) (*models.TrustedDevice, error) {
+	if f.findErr != nil {
+		return nil, f.findErr
+	}
+	td, ok := f.byToken[deviceToken]
+	if !ok || td.UserID != userID || !td.ExpiresAt.After(now) {
+		return nil, nil
+	}
+	return td, nil
+}
+
 // store seeds a live (unexpired) trusted device for a user.
 func (f *fakeTrustedDevicePersister) store(userID uuid.UUID, token string, expiresAt time.Time) {
 	f.byToken[token] = &models.TrustedDevice{
