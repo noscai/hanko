@@ -111,45 +111,105 @@ func (s DeviceTrustService) CreateTrustedDevice(userID uuid.UUID, deviceToken st
 	return nil
 }
 
+// CheckDeviceTrust answers "may this user skip the second factor on this browser?" by trying
+// every cookie format the migration window can present -- v2, then v1, then v0 -- and returning
+// true on the first branch that VALIDATES. False is returned only once every applicable branch
+// has been tried.
+//
+// This is a logical OR over results, not a dispatch on cookie format, and the difference is the
+// whole point. On deploy day a shared clinic workstation carries the legacy cookie holding N
+// colleagues' v1 entries. The moment one of them re-trusts the browser it also gains a v2 cookie,
+// while every other pre-deploy user on that machine still has only a v1 entry and no v2 row of
+// their own. Stopping at the v2 branch because a v2 cookie merely exists and parses would refuse
+// all of them and re-challenge an entire clinic for a full 2FA code -- the exact outcome this
+// design exists to prevent. Each branch therefore tolerates its own cookie being absent,
+// unreadable, or backed by no row, and falls through to the next.
+//
+// Fails closed at branch granularity: a persister error is a false for that branch only, never a
+// true and never a panic.
 func (s DeviceTrustService) CheckDeviceTrust(userID uuid.UUID) bool {
 	if userID.IsNil() || s.Cfg.MFA.DeviceTrustPolicy == "never" {
 		return false
 	}
 
-	cookieName := s.Cfg.MFA.DeviceTrustCookieName
-	cookie, _ := s.HttpContext.Cookie(cookieName)
+	// One clock for all three branches, so the expiry boundary cannot move mid-decision.
+	now := time.Now().UTC()
 
-	if cookie == nil {
+	return s.checkV2(userID, now) ||
+		s.checkComposite(userID, now) ||
+		s.checkLegacy(userID, now)
+}
+
+// cookieValue returns the value of the named cookie, or "" when the cookie is absent, unreadable,
+// or the name is unconfigured.
+//
+// Each branch of CheckDeviceTrust's OR calls this instead of the function returning early on a
+// missing cookie. With two cookie names in play, a single "no cookie -> false" short-circuit at
+// the top would end the OR before any branch was evaluated: a browser holding only the legacy
+// cookie would be refused the moment the v2 name was the one checked first, re-challenging every
+// pre-deploy user on a shared workstation. Absence is a property of one branch, not of the
+// decision.
+func (s DeviceTrustService) cookieValue(name string) string {
+	if name == "" {
+		return ""
+	}
+	cookie, err := s.HttpContext.Cookie(name)
+	if err != nil || cookie == nil {
+		return ""
+	}
+	return cookie.Value
+}
+
+// checkV2 reads the device-scoped cookie ("d1.<token>"): one token for the whole browser, with
+// trust recorded per (device_token, user_id) in the database. A token another colleague minted on
+// this device is therefore not, by itself, trust for this user.
+func (s DeviceTrustService) checkV2(userID uuid.UUID, now time.Time) bool {
+	token, ok := ParseDeviceIDCookie(s.cookieValue(s.Cfg.MFA.DeviceTrustDeviceCookieName))
+	if !ok {
 		return false
 	}
+	return s.hasValidTrust(token, userID, now)
+}
 
-	entries := s.ParseDeviceTrustCookie(cookie.Value)
-
-	// Handle legacy format (single token without user ID)
-	if entries == nil && cookie.Value != "" {
-		// Legacy: look up token in DB to check if it belongs to this user
-		trustedDevice, err := s.Persister.FindByDeviceToken(cookie.Value)
-		if err == nil && trustedDevice != nil &&
-			time.Now().UTC().Before(trustedDevice.ExpiresAt.UTC()) &&
-			trustedDevice.UserID.String() == userID.String() {
+// checkComposite reads the v1 legacy-cookie format, "<uuid>:<token>|<uuid>:<token>|...", and
+// validates every entry claiming this user rather than only the first. The cookie is
+// attacker-editable, so an entry merely nominates a token; the database decides.
+func (s DeviceTrustService) checkComposite(userID uuid.UUID, now time.Time) bool {
+	for _, entry := range s.ParseDeviceTrustCookie(s.cookieValue(s.Cfg.MFA.DeviceTrustCookieName)) {
+		if entry.UserID == userID && s.hasValidTrust(entry.DeviceToken, userID, now) {
 			return true
 		}
+	}
+	return false
+}
+
+// checkLegacy reads a v0 legacy-cookie value: a bare token carrying no user id, issued before the
+// composite format existed. It shares the cookie with v1 and is told apart from it by the same
+// predicate ParseDeviceTrustCookie uses, so the cookie's two readers cannot disagree about which
+// format they are looking at (invariant I1).
+func (s DeviceTrustService) checkLegacy(userID uuid.UUID, now time.Time) bool {
+	value := s.cookieValue(s.Cfg.MFA.DeviceTrustCookieName)
+	if !isLegacyBareToken(value) {
 		return false
 	}
+	return s.hasValidTrust(value, userID, now)
+}
 
-	// New format: find entry for this user
-	for _, entry := range entries {
-		if entry.UserID.String() == userID.String() {
-			trustedDevice, err := s.Persister.FindByDeviceToken(entry.DeviceToken)
-			if err == nil && trustedDevice != nil &&
-				time.Now().UTC().Before(trustedDevice.ExpiresAt.UTC()) &&
-				trustedDevice.UserID.String() == userID.String() {
-				return true
-			}
-		}
+// hasValidTrust is the one place where a nominated token becomes trust. The persister filters
+// (device_token, user_id, expires_at > now) in SQL and returns the row; the row's user is then
+// re-asserted here in Go.
+//
+// The redundancy is deliberate and load-bearing. One device_token is now shared by every user who
+// has trusted the browser, so a dropped user_id predicate in that query would not merely widen a
+// lookup -- it would hand every user on a shared device a second-factor bypass the moment one of
+// them trusted it. A field comparison is cheap enough to keep as a standing assertion against
+// that.
+func (s DeviceTrustService) hasValidTrust(deviceToken string, userID uuid.UUID, now time.Time) bool {
+	trustedDevice, err := s.Persister.FindValidTrust(deviceToken, userID, now)
+	if err != nil || trustedDevice == nil {
+		return false
 	}
-
-	return false
+	return trustedDevice.UserID == userID
 }
 
 func (s DeviceTrustService) GenerateRandomToken(length int) (string, error) {
@@ -170,7 +230,7 @@ func (s DeviceTrustService) ParseDeviceTrustCookie(cookieValue string) []DeviceT
 	}
 
 	// Legacy format detection (no separators = single token)
-	if !strings.Contains(cookieValue, entrySeparator) && !strings.Contains(cookieValue, fieldSeparator) {
+	if isLegacyBareToken(cookieValue) {
 		return nil // Caller handles legacy migration
 	}
 
@@ -209,6 +269,18 @@ func (s DeviceTrustService) ParseDeviceTrustCookie(cookieValue string) []DeviceT
 // Rejects an empty remainder ("d1." -> ("", false)) rather than returning ok=true with an empty
 // token: defense-in-depth -- fail closed here rather than trust the downstream DB constraints
 // (TrustedDevice.DeviceToken's StringIsPresent + StringLengthInRange) to hold forever.
+// isLegacyBareToken reports whether a legacy-cookie value is a v0 token: a bare token carrying no
+// user id, told apart from the v1 composite format only by the absence of both separators.
+// base64.URLEncoding (the token alphabet) never produces ":" or "|", so the test is exact.
+//
+// Shared by ParseDeviceTrustCookie and CheckDeviceTrust's v0 branch so the legacy cookie's two
+// readers can never drift apart about which format a value is (invariant I1).
+func isLegacyBareToken(cookieValue string) bool {
+	return cookieValue != "" &&
+		!strings.Contains(cookieValue, entrySeparator) &&
+		!strings.Contains(cookieValue, fieldSeparator)
+}
+
 func ParseDeviceIDCookie(cookieValue string) (token string, ok bool) {
 	rest, found := strings.CutPrefix(cookieValue, deviceTokenPrefix)
 	if !found || rest == "" {
