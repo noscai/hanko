@@ -808,7 +808,7 @@
         },
         "device_trust_max_users_per_device": {
           "type": "integer",
-          "description": "`device_trust_max_users_per_device` limits how many users can have device trust on a single device/browser.\nOldest entries are removed when the limit is exceeded. This allows multiple users to trust the same device\nwithout overwriting each other's trust tokens.",
+          "description": "`device_trust_max_users_per_device` is retained for backward compatibility only and has no\neffect. It used to cap how many users could hold device trust on one browser: the trust\ncookie carried an entry per user (\"\u003cuuid\u003e:\u003ctoken\u003e|...\"), and once that list grew past this\nlimit the oldest entries were truncated off -- silently evicting whichever user had trusted\nthe device longest, even though their `trusted_devices` row was still valid and unexpired.\nThat is the history that keeps this key defined: device trust is now keyed per user in\n`trusted_devices`, and the browser is handed a single device identity (the\n`device_trust_device_cookie_name` cookie) whose size is constant, independent of how many\nusers trust it -- there is no per-user list left to truncate.\n\nRemoving this field would break config loading for anyone who still has it set, so it stays.\nDo not wire it back into anything without understanding why it was retired: doing so would\nsilently reintroduce the eviction described above.",
           "default": 20
         },
         "device_trust_policy": {

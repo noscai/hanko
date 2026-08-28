@@ -44,9 +44,19 @@ type MFA struct {
 	// `device_trust_duration` configures the duration a device remains trusted after authentication; once expired, the
 	// user must reauthenticate with MFA.
 	DeviceTrustDuration time.Duration `yaml:"device_trust_duration" json:"device_trust_duration" koanf:"device_trust_duration" jsonschema:"default=720h,type=string"`
-	// `device_trust_max_users_per_device` limits how many users can have device trust on a single device/browser.
-	// Oldest entries are removed when the limit is exceeded. This allows multiple users to trust the same device
-	// without overwriting each other's trust tokens.
+	// `device_trust_max_users_per_device` is retained for backward compatibility only and has no
+	// effect. It used to cap how many users could hold device trust on one browser: the trust
+	// cookie carried an entry per user ("<uuid>:<token>|..."), and once that list grew past this
+	// limit the oldest entries were truncated off -- silently evicting whichever user had trusted
+	// the device longest, even though their `trusted_devices` row was still valid and unexpired.
+	// That is the history that keeps this key defined: device trust is now keyed per user in
+	// `trusted_devices`, and the browser is handed a single device identity (the
+	// `device_trust_device_cookie_name` cookie) whose size is constant, independent of how many
+	// users trust it -- there is no per-user list left to truncate.
+	//
+	// Removing this field would break config loading for anyone who still has it set, so it stays.
+	// Do not wire it back into anything without understanding why it was retired: doing so would
+	// silently reintroduce the eviction described above.
 	DeviceTrustMaxUsersPerDevice int `yaml:"device_trust_max_users_per_device" json:"device_trust_max_users_per_device,omitempty" koanf:"device_trust_max_users_per_device" jsonschema:"default=20"`
 	// `device_trust_policy` determines the conditions under which a device or browser is considered trusted, allowing
 	// MFA to be skipped for subsequent logins.

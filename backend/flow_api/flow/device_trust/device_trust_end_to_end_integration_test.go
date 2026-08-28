@@ -65,6 +65,12 @@ func TestDeviceTrustEndToEndSuite(t *testing.T) {
 
 type deviceTrustEndToEndSuite struct {
 	test.Suite
+
+	// maxUsersPerDeviceOverride, set only by
+	// TestSetting_DeviceTrustMaxUsersPerDeviceIsInert, replaces cfg()'s
+	// device_trust_max_users_per_device for the duration of one sub-case. nil means "use the
+	// harness default (20)", matching every other test in this file.
+	maxUsersPerDeviceOverride *int
 }
 
 func (s *deviceTrustEndToEndSuite) skipIfShort() {
@@ -240,6 +246,67 @@ func (s *deviceTrustEndToEndSuite) TestInvariant_SharedDeviceTokenGrantsTrustOnl
 	}
 }
 
+// TestSetting_DeviceTrustMaxUsersPerDeviceIsInert proves device_trust_max_users_per_device
+// (CU-869eqrmjn Task 9) is now a documented no-op.
+//
+// The setting used to cap how many users could hold device trust on one browser: the trust cookie
+// carried an entry per user, and once that list grew past the cap the oldest entries were
+// truncated off -- silently evicting whoever had trusted the device longest, even though their
+// trusted_devices row was still valid and unexpired. That eviction is exactly the bug
+// TestRegression_TwentyFirstUserDoesNotEvictTheFirstFromTheBrowser guards, at the default cap of
+// 20. This test guards the setting itself, at two configurations that would have evicted someone
+// under the old truncating write path but must not under the current one:
+//
+//   - explicitly set BELOW the trusting headcount (5, with a 6th user trusting) -- proves a
+//     tenant who deliberately tightens this key gets no truncation, not even at a threshold this
+//     low;
+//   - left at its Go zero value (0, i.e. never configured) -- the old capped-cookie write path
+//     fell back to a default of 20 for a non-positive value (config_default.go still documents
+//     that same default), so this sub-case drives past that threshold too (21 users, the same
+//     headcount as the regression test above) rather than stopping short of it, so leaving the key
+//     unset is proven inert and not merely untested.
+//
+// A setting that is inert only when explicitly configured is not actually retired -- hence both.
+func (s *deviceTrustEndToEndSuite) TestSetting_DeviceTrustMaxUsersPerDeviceIsInert() {
+	s.skipIfShort()
+
+	s.Run("cap explicitly set below the trusting headcount", func() {
+		s.assertCapDoesNotEvictTheFirstUser(5, 6)
+	})
+
+	s.Run("cap left at its zero value (never configured)", func() {
+		s.assertCapDoesNotEvictTheFirstUser(0, 21)
+	})
+}
+
+// assertCapDoesNotEvictTheFirstUser configures device_trust_max_users_per_device as
+// maxUsersPerDevice, has userCount users trust a shared browser in order, and asserts the first of
+// them is still trusted afterward -- the exact property the old cookie truncation used to violate.
+func (s *deviceTrustEndToEndSuite) assertCapDoesNotEvictTheFirstUser(maxUsersPerDevice, userCount int) {
+	s.T().Helper()
+
+	// Subtests share the suite's database (SetupTest runs once per suite METHOD, not per s.Run);
+	// start each sub-case from a device nobody trusts, same pattern as
+	// TestInvariant_EveryUnexpiredRowStaysReachableFromTheBrowserThatCreatedIt.
+	s.Require().NoError(s.Storage.GetConnection().RawQuery("DELETE FROM trusted_devices").Exec())
+
+	s.maxUsersPerDeviceOverride = &maxUsersPerDevice
+	defer func() { s.maxUsersPerDeviceOverride = nil }()
+
+	users := s.createUsers(userCount)
+	workstation := newSharedWorkstation()
+
+	for _, userID := range users {
+		s.trust(workstation, userID)
+	}
+
+	s.True(s.isTrusted(workstation, users[0]),
+		"user 1 must still be trusted after %d users trust this browser with "+
+			"device_trust_max_users_per_device=%d -- the setting is retained only for "+
+			"backward-compatible config loading and must not evict anyone",
+		userCount, maxUsersPerDevice)
+}
+
 // sharedWorkstation is the browser half of the loop: a minimal cookie jar for one machine.
 //
 // It stores whatever the hook sets and replays it on the next request, keyed by cookie name, so a
@@ -333,6 +400,12 @@ func (s *deviceTrustEndToEndSuite) cfg() config.Config {
 	cfg.MFA.DeviceTrustCookieName = testCookieName
 	cfg.MFA.DeviceTrustDeviceCookieName = testDeviceCookieName
 	cfg.MFA.DeviceTrustMaxUsersPerDevice = 20
+	// Overridden only by TestSetting_DeviceTrustMaxUsersPerDeviceIsInert, to drive the setting at
+	// values other than the harness default above while still going through the same trust/
+	// isTrusted helpers every other test in this file uses.
+	if s.maxUsersPerDeviceOverride != nil {
+		cfg.MFA.DeviceTrustMaxUsersPerDevice = *s.maxUsersPerDeviceOverride
+	}
 	return cfg
 }
 
