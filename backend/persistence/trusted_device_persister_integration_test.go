@@ -207,19 +207,33 @@ func (s *trustedDevicePersisterSuite) TestCreate_RetrustingSamePairLeavesExactly
 	base := time.Now().UTC().Truncate(time.Millisecond)
 
 	persister := s.Storage.GetTrustedDevicePersister()
-	var lastExpiresAt time.Time
+	var firstID uuid.UUID
+	var firstCreatedAt, lastExpiresAt, lastUpdatedAt time.Time
 	for i := 0; i < 10; i++ {
 		// Every real call generates a fresh row ID (see DeviceTrustService.CreateTrustedDevice
 		// in flow_api/services/device_trust.go), so this must not depend on ID reuse -- only
 		// the (device_token, user_id) pair can dedupe it.
+		id := s.mustNewUUID()
+		// created_at and updated_at are deliberately distinct per iteration (not a shared
+		// `base`, as an earlier version of this test used) -- otherwise "created_at was
+		// preserved from the first insert" and "created_at happened to be overwritten with a
+		// coincidentally identical value" would be indistinguishable, and the assertion below
+		// would not notice a DO UPDATE SET that started touching created_at.
+		createdAt := base.Add(time.Duration(i) * time.Minute)
+		updatedAt := base.Add(time.Duration(i)*time.Minute + 30*time.Second)
 		lastExpiresAt = base.Add(time.Duration(i+1) * time.Hour)
+		lastUpdatedAt = updatedAt
+		if i == 0 {
+			firstID = id
+			firstCreatedAt = createdAt
+		}
 		s.Require().NoError(persister.Create(models.TrustedDevice{
-			ID:          s.mustNewUUID(),
+			ID:          id,
 			UserID:      userID,
 			DeviceToken: token,
 			ExpiresAt:   lastExpiresAt,
-			CreatedAt:   base,
-			UpdatedAt:   base.Add(time.Duration(i) * time.Minute),
+			CreatedAt:   createdAt,
+			UpdatedAt:   updatedAt,
 		}))
 	}
 
@@ -229,6 +243,16 @@ func (s *trustedDevicePersisterSuite) TestCreate_RetrustingSamePairLeavesExactly
 		All(&rows))
 	s.Require().Len(rows, 1, "re-trusting the same (device_token, user_id) pair must upsert, not accumulate rows")
 	s.WithinDuration(lastExpiresAt, rows[0].ExpiresAt, time.Millisecond)
+
+	// id and created_at are deliberately absent from the upsert's DO UPDATE SET clause, so
+	// they must survive unchanged from the very first insert -- not the last -- proving
+	// preservation rather than a coincidence of every iteration sharing one value.
+	s.Equal(firstID, rows[0].ID, "id must be preserved from the first insert, not replaced by a later re-trust's id")
+	s.WithinDuration(firstCreatedAt, rows[0].CreatedAt, time.Millisecond, "created_at must be preserved from the first insert, not overwritten by a later re-trust")
+
+	// updated_at IS in the DO UPDATE SET clause, so -- unlike id/created_at above -- it must
+	// move to the latest re-trust's value.
+	s.WithinDuration(lastUpdatedAt, rows[0].UpdatedAt, time.Millisecond, "updated_at must be bumped to the latest re-trust's value")
 }
 
 // TestCreate_TwoUsersSharingDeviceToken_KeepSeparateRowsAndExpiry is the core scenario this
