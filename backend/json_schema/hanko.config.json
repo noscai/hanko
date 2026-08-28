@@ -796,6 +796,11 @@
           "description": "`device_trust_cookie_name` is the name of the cookie used to store the token of a trusted device.",
           "default": "hanko_device_token"
         },
+        "device_trust_device_cookie_name": {
+          "type": "string",
+          "description": "`device_trust_device_cookie_name` is the name of the cookie used to store a single device identity for device\ntrust. Like `device_trust_cookie_name`, renaming this value after rollout is a one-way door: browsers keep\nsending the token under the old cookie name, the server looks for the new name, and every existing cookie on\nevery device becomes unreadable at once — evicting every user's device trust in a single deploy, not just the\ndevice that happens to trust next.",
+          "default": "hanko-device-id"
+        },
         "device_trust_duration": {
           "type": "string",
           "description": "`device_trust_duration` configures the duration a device remains trusted after authentication; once expired, the\nuser must reauthenticate with MFA.",
