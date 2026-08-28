@@ -42,6 +42,18 @@ func NewTrustedDevicePersister(db *pop.Connection) TrustedDevicePersister {
 // model explicitly before the raw-SQL upsert. Skipping that step would let an empty or
 // malformed device_token persist silently -- Validate is what enforces the 64-128 char length
 // that makes a device_token a device_token; see models.TrustedDevice.Validate.
+//
+// POSTGRES-ONLY, deliberately. `ON CONFLICT ... EXCLUDED` is PostgreSQL syntax; MySQL wants
+// `ON DUPLICATE KEY UPDATE`. That is not a regression this introduces: the fork already cannot
+// run on MySQL, because 20260120000003_change_unique_constraints.up.fizz creates PARTIAL unique
+// indexes (`... WHERE tenant_id IS NOT NULL`) for the multi-tenant model, and MySQL has no
+// partial indexes at all. All three clusters use `postgres://`.
+//
+// A dialect branch was considered and rejected: it would add a MySQL write path through the
+// authentication hot path that no test in this repo can exercise, and the portable alternative
+// (UPDATE, then INSERT if no rows matched) reintroduces exactly the concurrent-re-trust race the
+// unique index was added to close. Untestable code guarding an unreachable configuration is worse
+// than an honest dependency.
 func (p *trustedDevicePersister) Create(trustedDevice models.TrustedDevice) error {
 	vErr, err := trustedDevice.Validate(p.db)
 	if err != nil {

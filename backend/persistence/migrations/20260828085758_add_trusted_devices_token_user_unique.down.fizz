@@ -1,3 +1,12 @@
 sql("DROP INDEX IF EXISTS trusted_devices_token_user_idx")
-# Dropping the index is reversible; the rows the up migration deleted are not. That is accepted:
-# their only effect was one extra 2FA challenge for the affected user, who simply re-trusts.
+# DO NOT RUN THIS WITHOUT ALSO REVERTING THE HANKO IMAGE.
+#
+# This index is the ON CONFLICT arbiter for TrustedDevicePersister.Create. Drop it while the new
+# code is still deployed and every device-trust write fails at runtime -- on every login, for every
+# user -- with:
+#   ERROR: there is no unique or exclusion constraint matching the ON CONFLICT specification
+# (verified against Postgres 12, not inferred). The rollback plan is therefore image + config, and
+# the index is harmless if simply left in place: the old code never references it.
+#
+# Dropping the index is itself reversible; the rows the up migration deduplicated are not. That is
+# accepted -- their only effect was one extra 2FA challenge for the affected user, who re-trusts.
