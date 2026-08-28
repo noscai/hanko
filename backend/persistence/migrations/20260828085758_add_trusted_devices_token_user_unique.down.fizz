@@ -1,1 +1,3 @@
-sql("DROP INDEX IF EXISTS uq_trusted_devices_token_user")
+sql("DROP INDEX IF EXISTS trusted_devices_token_user_idx")
+# Dropping the index is reversible; the rows the up migration deleted are not. That is accepted:
+# their only effect was one extra 2FA challenge for the affected user, who simply re-trusts.

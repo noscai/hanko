@@ -20,7 +20,7 @@ import (
 
 // TestTrustedDevicePersisterSuite exercises FindValidTrust and the Create upsert added to
 // support one shared browser device_token trusting many users, keyed by the
-// uq_trusted_devices_token_user unique index (20260828085758). The single riskiest property
+// trusted_devices_token_user_idx unique index (20260828085758). The single riskiest property
 // here is identity isolation: FindValidTrust must never return a row for the wrong user just
 // because the device_token matches -- that would turn a shared clinic workstation into a
 // total second-factor bypass the moment any one user trusts it.

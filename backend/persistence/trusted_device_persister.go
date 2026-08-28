@@ -30,7 +30,7 @@ func NewTrustedDevicePersister(db *pop.Connection) TrustedDevicePersister {
 	return &trustedDevicePersister{db: db}
 }
 
-// Create upserts on (device_token, user_id) -- see uq_trusted_devices_token_user
+// Create upserts on (device_token, user_id) -- see trusted_devices_token_user_idx
 // (20260828085758_add_trusted_devices_token_user_unique). A device_token is now shared by every
 // user who has trusted that browser, so re-trusting the same (device_token, user_id) pair on
 // login must refresh the existing row's expires_at rather than insert a second row for the same
