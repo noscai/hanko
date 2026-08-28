@@ -13,6 +13,19 @@ package device_trust
 // together against the database -- which is exactly where the shipped bug lived: the row and the
 // browser's pointer to it disagreed, and each half looked correct on its own.
 //
+// WHAT IS DELIBERATELY NOT HERE. The design listed four invariants; two are already asserted
+// closer to the code that owns them, and duplicating them here would only add slow, redundant
+// database round-trips:
+//   - I-2, one row per (device_token, user_id) and lookups independent of row order ->
+//     persistence/trusted_device_persister_integration_test.go, TestCreate_RetrustingSamePair...
+//     and TestFindValidTrust_OrderIndependent / _ExpiresAtEqualsNow (the strict > boundary).
+//   - I-3, cookie size constant in headcount -> hook_issue_trust_device_cookie_test.go,
+//     ..._CookieSizeIsIndependentOfUserCount (N=1/21/50) and ..._ByteGuardNeverFiresUnderV2Format
+//     (N=1/21/50/500).
+// The one residue worth having here was that the upsert had only ever been driven by calling the
+// persister directly, never through the hook against real Postgres; that is folded into I-1's
+// row-count assertion rather than split into its own test.
+//
 // PLACEMENT. This is an INTERNAL test package (package device_trust, not device_trust_test),
 // unlike the two persistence integration tests, which had to go external. Their constraint does
 // not apply here: test.Suite lives in package "test", whose import closure is
