@@ -1,0 +1,26 @@
+backend/config/config_mfa.go
+  s_e192dd3b10b3fa::t_8c8c0d14e1e4ef 47-59
+backend/json_schema/hanko.config.json
+  s_e192dd3b10b3fa::t_2ac5f27c58e3cf 811
+backend/flow_api/flow/device_trust/device_trust_end_to_end_integration_test.go
+  s_e192dd3b10b3fa::t_d5cbb6360246f6 403-408
+  s_e192dd3b10b3fa::t_6169c897f01a2e 263-267
+  s_e192dd3b10b3fa::t_829843677ac5d3 68-73
+  s_e192dd3b10b3fa::t_47f41bce1b5fe9 249-262,268-309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3a6d3b870064258cf4113bf8a98d969565f3099a",
+  "prompts": {},
+  "sessions": {
+    "s_e192dd3b10b3fa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "017a763e-b10b-4355-bc95-e83a7a308e92",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Fadlika Dita Nurjanto <fadlikadn@gmail.com>"
+    }
+  }
+}
