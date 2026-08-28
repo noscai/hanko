@@ -147,18 +147,18 @@ func TestParseSecurityNotificationsConfig(t *testing.T) {
 	assert.False(t, notificationsConfig.Notifications.MFADelete.Enabled)
 }
 
-func TestDefaultConfigMFADeviceTrustDeviceCookieName(t *testing.T) {
+func TestDefaultConfigMFADeviceTrustIDCookieName(t *testing.T) {
 	cfg := DefaultConfig()
-	assert.Equal(t, "hanko-device-id", cfg.MFA.DeviceTrustDeviceCookieName)
+	assert.Equal(t, "hanko-device-id", cfg.MFA.DeviceTrustIDCookieName)
 }
 
-func TestParseMFADeviceTrustDeviceCookieNameConfig(t *testing.T) {
-	configPath := "./mfa-device-trust-device-cookie-name-config.yaml"
+func TestParseMFADeviceTrustIDCookieNameConfig(t *testing.T) {
+	configPath := "./mfa-device-trust-id-cookie-name-config.yaml"
 	cfg, err := Load(&configPath)
 	require.NoError(t, err)
 	require.NoError(t, cfg.Validate())
 
-	assert.Equal(t, "custom-device-id-cookie", cfg.MFA.DeviceTrustDeviceCookieName)
+	assert.Equal(t, "custom-device-id-cookie", cfg.MFA.DeviceTrustIDCookieName)
 }
 
 func TestParseDefaultSecurityNotificationsConfig(t *testing.T) {

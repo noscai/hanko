@@ -84,7 +84,7 @@ func (h IssueTrustDeviceCookie) Execute(c flowpilot.HookExecutionContext) error 
 	}
 
 	cookie := new(http.Cookie)
-	cookie.Name = deps.Cfg.MFA.DeviceTrustDeviceCookieName
+	cookie.Name = deps.Cfg.MFA.DeviceTrustIDCookieName
 	cookie.Value = services.FormatDeviceIDCookie(deviceToken)
 	cookie.Path = "/"
 	cookie.HttpOnly = true
@@ -159,7 +159,7 @@ func isIssuedDeviceToken(svc services.DeviceTrustService, token string) bool {
 // presentedDeviceCookie returns the raw v2 cookie value the request carries, or "" when the
 // cookie is absent, unreadable, or its name is unconfigured.
 func presentedDeviceCookie(deps *shared.Dependencies) string {
-	name := deps.Cfg.MFA.DeviceTrustDeviceCookieName
+	name := deps.Cfg.MFA.DeviceTrustIDCookieName
 	if name == "" {
 		return ""
 	}

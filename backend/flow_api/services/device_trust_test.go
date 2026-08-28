@@ -161,7 +161,7 @@ func newServiceWithCookies(t *testing.T, persister *fakeTrustedDevicePersister, 
 	cfg := config.Config{}
 	cfg.MFA.DeviceTrustPolicy = "prompt"
 	cfg.MFA.DeviceTrustCookieName = testCookieName
-	cfg.MFA.DeviceTrustDeviceCookieName = testDeviceCookieName
+	cfg.MFA.DeviceTrustIDCookieName = testDeviceCookieName
 	cfg.MFA.DeviceTrustDuration = time.Hour
 
 	e := echo.New()
@@ -327,7 +327,7 @@ func TestCheckDeviceTrust(t *testing.T) {
 
 // ---- CheckDeviceTrust across all three cookie formats (archon#2528) ----
 //
-// v2 (new)      "d1.<token>"                       in the device cookie   (DeviceTrustDeviceCookieName)
+// v2 (new)      "d1.<token>"                       in the device cookie   (DeviceTrustIDCookieName)
 // v1 composite  "<uuid>:<tok>|<uuid>:<tok>|..."    in the legacy cookie   (DeviceTrustCookieName)
 // v0 legacy     "<tok>" (bare, no separators)      in the legacy cookie
 //
@@ -494,14 +494,14 @@ func TestCheckDeviceTrust_CookieFormats(t *testing.T) {
 	})
 
 	// A cluster running the new binary against a config file written before
-	// device_trust_device_cookie_name existed leaves the v2 name empty. The v2 branch must then
+	// device_trust_id_cookie_name existed leaves the v2 name empty. The v2 branch must then
 	// simply not match -- never look up a cookie named "" and never deny the v1/v0 branches.
 	t.Run("an unconfigured v2 cookie name does not break the legacy branches", func(t *testing.T) {
 		p := newFakePersister()
 		tok := randToken(t)
 		p.store(userA, tok, future)
 		svc := newServiceWithCookies(t, p, userA.String()+":"+tok, deviceTokenPrefix+tok)
-		svc.Cfg.MFA.DeviceTrustDeviceCookieName = ""
+		svc.Cfg.MFA.DeviceTrustIDCookieName = ""
 
 		assert.True(t, svc.CheckDeviceTrust(userA))
 	})

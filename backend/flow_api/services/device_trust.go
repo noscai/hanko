@@ -129,7 +129,7 @@ func (s DeviceTrustService) cookieValue(name string) string {
 // trust recorded per (device_token, user_id) in the database. A token another colleague minted on
 // this device is therefore not, by itself, trust for this user.
 func (s DeviceTrustService) checkV2(userID uuid.UUID, now time.Time) bool {
-	token, ok := ParseDeviceIDCookie(s.cookieValue(s.Cfg.MFA.DeviceTrustDeviceCookieName))
+	token, ok := ParseDeviceIDCookie(s.cookieValue(s.Cfg.MFA.DeviceTrustIDCookieName))
 	if !ok {
 		return false
 	}
@@ -236,7 +236,7 @@ func isLegacyBareToken(cookieValue string) bool {
 
 // ParseDeviceIDCookie decodes a v2 device-scoped cookie value ("d1.<token>") into its bare
 // token. Named for the cookie it reads (clinicos-2fa-device-id, config key
-// device_trust_device_cookie_name) rather than "v2" or "...Token" -- it sits ~35 lines from
+// device_trust_id_cookie_name) rather than "v2" or "...Token" -- it sits ~35 lines from
 // ParseDeviceTrustCookie, which parses a different cookie into a different shape
 // ([]DeviceTrustEntry vs (string, bool)); a same-prefixed name would make the two easy to
 // transpose once later tasks wire both into the same resolution path. A pure function,

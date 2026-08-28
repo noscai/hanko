@@ -11,4 +11,4 @@ secrets:
 service:
   name: Hanko Authentication Service
 mfa:
-  device_trust_device_cookie_name: custom-device-id-cookie
+  device_trust_id_cookie_name: custom-device-id-cookie

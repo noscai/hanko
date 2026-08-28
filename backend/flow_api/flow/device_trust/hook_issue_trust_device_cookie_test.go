@@ -147,7 +147,7 @@ func trustDepsWithCookies(policy string, duration time.Duration, persister persi
 	cfg.MFA.DeviceTrustPolicy = policy
 	cfg.MFA.DeviceTrustDuration = duration
 	cfg.MFA.DeviceTrustCookieName = testCookieName
-	cfg.MFA.DeviceTrustDeviceCookieName = testDeviceCookieName
+	cfg.MFA.DeviceTrustIDCookieName = testDeviceCookieName
 	cfg.MFA.DeviceTrustMaxUsersPerDevice = 20
 
 	deps := &shared.Dependencies{
@@ -498,7 +498,7 @@ func TestIssueTrustDeviceCookie_Execute_ErrorsWhenPersistFails(t *testing.T) {
 // TestIssueTrustDeviceCookie_Execute_ByteGuardNeverFiresUnderV2Format below. That means the guard
 // itself can never fire from anything the v2 format alone produces; the only legitimate way to
 // drive it is a config-driven input that also feeds http.Cookie.String() -- the cookie's NAME
-// (deps.Cfg.MFA.DeviceTrustDeviceCookieName), which is operator-controlled and unrelated to the
+// (deps.Cfg.MFA.DeviceTrustIDCookieName), which is operator-controlled and unrelated to the
 // token machinery. That is deliberately used below instead of adding any test-only seam to
 // production code.
 
@@ -566,7 +566,7 @@ func TestIssueTrustDeviceCookie_Execute_RefusesOversizedCookie(t *testing.T) {
 
 	persister := &fakeTrustedDevicePersister{}
 	deps, rec := trustDeps("always", 168*time.Hour, persister, "")
-	deps.Cfg.MFA.DeviceTrustDeviceCookieName = cookieNameForTargetBytes(t, durationSeconds168h, targetBytes)
+	deps.Cfg.MFA.DeviceTrustIDCookieName = cookieNameForTargetBytes(t, durationSeconds168h, targetBytes)
 	ctx := newIssueCookieCtx(deps)
 	require.NoError(t, ctx.Stash().Set(shared.StashPathUserID, uuid.Must(uuid.NewV4()).String()))
 
@@ -589,7 +589,7 @@ func TestIssueTrustDeviceCookie_Execute_ByteGuardBoundary(t *testing.T) {
 	t.Run("exactly at the cap is written", func(t *testing.T) {
 		persister := &fakeTrustedDevicePersister{}
 		deps, rec := trustDeps("always", 168*time.Hour, persister, "")
-		deps.Cfg.MFA.DeviceTrustDeviceCookieName = cookieNameForTargetBytes(t, durationSeconds168h, maxCookieBytes)
+		deps.Cfg.MFA.DeviceTrustIDCookieName = cookieNameForTargetBytes(t, durationSeconds168h, maxCookieBytes)
 		ctx := newIssueCookieCtx(deps)
 		require.NoError(t, ctx.Stash().Set(shared.StashPathUserID, uuid.Must(uuid.NewV4()).String()))
 
@@ -611,7 +611,7 @@ func TestIssueTrustDeviceCookie_Execute_ByteGuardBoundary(t *testing.T) {
 	t.Run("one byte over the cap is refused", func(t *testing.T) {
 		persister := &fakeTrustedDevicePersister{}
 		deps, rec := trustDeps("always", 168*time.Hour, persister, "")
-		deps.Cfg.MFA.DeviceTrustDeviceCookieName = cookieNameForTargetBytes(t, durationSeconds168h, maxCookieBytes+1)
+		deps.Cfg.MFA.DeviceTrustIDCookieName = cookieNameForTargetBytes(t, durationSeconds168h, maxCookieBytes+1)
 		ctx := newIssueCookieCtx(deps)
 		require.NoError(t, ctx.Stash().Set(shared.StashPathUserID, uuid.Must(uuid.NewV4()).String()))
 

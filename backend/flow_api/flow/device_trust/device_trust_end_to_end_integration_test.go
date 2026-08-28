@@ -419,7 +419,7 @@ func (s *deviceTrustEndToEndSuite) cfg() config.Config {
 	cfg.MFA.DeviceTrustPolicy = "always"
 	cfg.MFA.DeviceTrustDuration = trustDuration
 	cfg.MFA.DeviceTrustCookieName = testCookieName
-	cfg.MFA.DeviceTrustDeviceCookieName = testDeviceCookieName
+	cfg.MFA.DeviceTrustIDCookieName = testDeviceCookieName
 	cfg.MFA.DeviceTrustMaxUsersPerDevice = 20
 	// Overridden only by TestSetting_DeviceTrustMaxUsersPerDeviceIsInert, to drive the setting at
 	// values other than the harness default above while still going through the same trust/

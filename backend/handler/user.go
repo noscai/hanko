@@ -372,12 +372,12 @@ func (h *UserHandler) ClearDeviceTrust(c echo.Context) error {
 	}
 
 	// Both the legacy multi-user cookie (DeviceTrustCookieName) and the new
-	// per-device cookie (DeviceTrustDeviceCookieName) can legitimately be
+	// per-device cookie (DeviceTrustIDCookieName) can legitimately be
 	// present on a browser during the migration window - clients don't all
 	// pick up the new cookie in the same request. Clearing only one leaves
 	// the other cookie proving trust, so the browser stays trusted while
 	// this endpoint reports success.
-	for _, cookieName := range []string{h.cfg.MFA.DeviceTrustCookieName, h.cfg.MFA.DeviceTrustDeviceCookieName} {
+	for _, cookieName := range []string{h.cfg.MFA.DeviceTrustCookieName, h.cfg.MFA.DeviceTrustIDCookieName} {
 		c.SetCookie(&http.Cookie{
 			Name:     cookieName,
 			Value:    "",

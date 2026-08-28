@@ -35,12 +35,12 @@ type MFA struct {
 	AcquireOnRegistration bool `yaml:"acquire_on_registration" json:"acquire_on_registration" koanf:"acquire_on_registration" jsonschema:"default=true"`
 	// `device_trust_cookie_name` is the name of the cookie used to store the token of a trusted device.
 	DeviceTrustCookieName string `yaml:"device_trust_cookie_name" json:"device_trust_cookie_name,omitempty" koanf:"device_trust_cookie_name" jsonschema:"default=hanko_device_token"`
-	// `device_trust_device_cookie_name` is the name of the cookie used to store a single device identity for device
+	// `device_trust_id_cookie_name` is the name of the cookie used to store a single device identity for device
 	// trust. Like `device_trust_cookie_name`, renaming this value after rollout is a one-way door: browsers keep
 	// sending the token under the old cookie name, the server looks for the new name, and every existing cookie on
 	// every device becomes unreadable at once — evicting every user's device trust in a single deploy, not just the
 	// device that happens to trust next.
-	DeviceTrustDeviceCookieName string `yaml:"device_trust_device_cookie_name" json:"device_trust_device_cookie_name,omitempty" koanf:"device_trust_device_cookie_name" jsonschema:"default=hanko-device-id"`
+	DeviceTrustIDCookieName string `yaml:"device_trust_id_cookie_name" json:"device_trust_id_cookie_name,omitempty" koanf:"device_trust_id_cookie_name" jsonschema:"default=hanko-device-id"`
 	// `device_trust_duration` configures the duration a device remains trusted after authentication; once expired, the
 	// user must reauthenticate with MFA.
 	DeviceTrustDuration time.Duration `yaml:"device_trust_duration" json:"device_trust_duration" koanf:"device_trust_duration" jsonschema:"default=720h,type=string"`
@@ -51,7 +51,7 @@ type MFA struct {
 	// the device longest, even though their `trusted_devices` row was still valid and unexpired.
 	// That is the history that keeps this key defined: device trust is now keyed per user in
 	// `trusted_devices`, and the browser is handed a single device identity (the
-	// `device_trust_device_cookie_name` cookie) whose size is constant, independent of how many
+	// `device_trust_id_cookie_name` cookie) whose size is constant, independent of how many
 	// users trust it -- there is no per-user list left to truncate.
 	//
 	// Removing this field would break config loading for anyone who still has it set, so it stays.

@@ -20,7 +20,7 @@ import (
 func TestUserHandler_ClearDeviceTrust_ClearsBothDeviceTrustCookies(t *testing.T) {
 	cfg := test.DefaultConfig
 	cfg.MFA.DeviceTrustCookieName = "test-legacy-device-trust-token"
-	cfg.MFA.DeviceTrustDeviceCookieName = "test-device-id"
+	cfg.MFA.DeviceTrustIDCookieName = "test-device-id"
 
 	h := NewUserHandler(&cfg, nil, nil, nil)
 
@@ -42,7 +42,7 @@ func TestUserHandler_ClearDeviceTrust_ClearsBothDeviceTrustCookies(t *testing.T)
 		cookiesByName[cookie.Name] = cookie
 	}
 
-	for _, name := range []string{cfg.MFA.DeviceTrustCookieName, cfg.MFA.DeviceTrustDeviceCookieName} {
+	for _, name := range []string{cfg.MFA.DeviceTrustCookieName, cfg.MFA.DeviceTrustIDCookieName} {
 		cookie, ok := cookiesByName[name]
 		if !assert.True(t, ok, "expected a Set-Cookie header for %q", name) {
 			continue
