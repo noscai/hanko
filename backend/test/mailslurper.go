@@ -166,10 +166,10 @@ func (m *TestMailslurper) DeleteEmails() error {
 	client := http.Client{}
 
 	response, err := client.Do(httpReq)
-	defer response.Body.Close()
 	if err != nil {
 		return fmt.Errorf("failed to delete emails from mailslurper: %w", err)
 	}
+	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to delete emails from mailslurper: %w", err)
