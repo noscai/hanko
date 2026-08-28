@@ -1,0 +1,1 @@
+sql("DROP INDEX IF EXISTS uq_trusted_devices_token_user")
