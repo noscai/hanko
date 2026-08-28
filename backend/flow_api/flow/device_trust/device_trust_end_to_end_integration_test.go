@@ -47,15 +47,19 @@ package device_trust
 // them compiling and running, and they fail on the property, not on a format mismatch.
 
 import (
+	cryptorand "crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/teamhanko/hanko/backend/v2/config"
@@ -476,4 +480,85 @@ func (s *deviceTrustEndToEndSuite) distinctDeviceTokenCount() int {
 		tokens[row.DeviceToken] = struct{}{}
 	}
 	return len(tokens)
+}
+
+// TestUpgrade_PreDeployCompositeCookieSurvivesTheDeployAndTheFirstMigration is the deploy-day
+// guard: risk R-1, the most expensive way this change could fail.
+//
+// A clinic workstation carries a v1 composite cookie with N trusted users at the moment the new
+// hanko rolls out. Nobody may be re-challenged by the deploy, and -- the part that is easy to get
+// wrong -- nobody may be re-challenged by the FIRST colleague who later migrates to v2. From that
+// moment the browser holds BOTH cookies, and a CheckDeviceTrust that dispatched on cookie FORMAT
+// rather than OR-ing over RESULTS would refuse everyone else at the v2 branch and never reach
+// their still-valid v1 entries: one person re-trusting challenges the whole clinic.
+//
+// TestCheckDeviceTrust_V2CookiePresentButOnlyV1TrustExists_StillTrusted asserts the same contract
+// against a fake persister with a single user. This one drives the real hook and real Postgres
+// with a populated cookie, which is the only place a mismatch between what the write path emits
+// and what the read path looks for can actually surface.
+//
+// It also guards a property with a deadline: the v1 path exists only until the last legacy cookie
+// drains. Once that window closes nobody can construct this state again, so a regression here
+// would be permanently invisible.
+func (s *deviceTrustEndToEndSuite) TestUpgrade_PreDeployCompositeCookieSurvivesTheDeployAndTheFirstMigration() {
+	s.skipIfShort()
+
+	s.Require().NoError(s.Storage.GetConnection().RawQuery("DELETE FROM trusted_devices").Exec())
+
+	const preDeployUsers = 20
+	users := s.createUsers(preDeployUsers)
+	workstation := newSharedWorkstation()
+
+	// The pre-deploy world, built the way the OLD hook built it: a fresh token per trust event,
+	// one row each, all of them named in a single composite cookie. The current hook can no
+	// longer produce this shape, so the only faithful way to test the upgrade is to forge it.
+	entries := make([]string, 0, preDeployUsers)
+	now := time.Now().UTC()
+	for _, userID := range users {
+		token := randomLegacyToken(s.T())
+		s.Require().NoError(s.Storage.GetConnection().RawQuery(
+			"INSERT INTO trusted_devices (id, user_id, device_token, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+			uuid.Must(uuid.NewV4()), userID, token, now.Add(trustDuration), now, now).Exec())
+		entries = append(entries, userID.String()+":"+token)
+	}
+	legacyCookie := strings.Join(entries, "|")
+	workstation.jar[testCookieName] = legacyCookie
+
+	// The deploy lands. Nobody has re-trusted yet; everyone must be served by the v1 branch.
+	for i, userID := range users {
+		s.True(s.isTrusted(workstation, userID),
+			"user %d must not be re-challenged by the deploy itself -- their v1 entry is still valid", i+1)
+	}
+	s.Empty(workstation.jar[testDeviceCookieName], "no v2 cookie should exist before anyone re-trusts")
+
+	// The first migration. A user who is still trusted is never offered the trust prompt
+	// (hook_schedule_trust_device_state only schedules DEVICE_TRUST for an untrusted device), so
+	// the real moment someone crosses to v2 is when their own v1 trust lapses. Reach it.
+	s.Require().NoError(s.Storage.GetConnection().RawQuery(
+		"UPDATE trusted_devices SET expires_at = ? WHERE user_id = ?", now.Add(-time.Hour), users[0]).Exec())
+	s.trust(workstation, users[0])
+
+	// Without this the rest of the test would pass vacuously, with only one cookie in play.
+	s.Require().NotEmpty(workstation.jar[testDeviceCookieName],
+		"user 1 must now hold a v2 cookie -- otherwise the both-cookies state below is never reached")
+	s.Require().Equal(legacyCookie, workstation.jar[testCookieName],
+		"the legacy cookie must never be rewritten: doing so would drop every other user's entry")
+
+	// The dangerous moment, with both cookies live.
+	for i, userID := range users[1:] {
+		s.True(s.isTrusted(workstation, userID),
+			"user %d must still be trusted via their v1 entry even though a v2 cookie now exists -- "+
+				"a format-dispatching read path would challenge this whole clinic at once", i+2)
+	}
+	s.True(s.isTrusted(workstation, users[0]), "the migrated user must be trusted via their new v2 row")
+}
+
+// randomLegacyToken mints a token in the shape the pre-fix hook produced: 64 random bytes,
+// base64url, 88 characters. The exact length matters -- models.TrustedDevice enforces 64..128.
+func randomLegacyToken(t *testing.T) string {
+	t.Helper()
+	buf := make([]byte, 64)
+	_, err := cryptorand.Read(buf)
+	require.NoError(t, err)
+	return base64.URLEncoding.EncodeToString(buf)
 }
