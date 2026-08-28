@@ -273,7 +273,11 @@ func (s *deviceTrustEndToEndSuite) TestInvariant_SharedDeviceTokenGrantsTrustOnl
 //   - explicitly set BELOW the trusting headcount (5, with a 6th user trusting) -- proves a
 //     tenant who deliberately tightens this key gets no truncation, not even at a threshold this
 //     low;
-//   - left at its Go zero value (0, i.e. never configured) -- the old capped-cookie write path
+//   - left at its Go zero value (0) -- NOT the same as "omitted from YAML": Load() seeds
+//     DefaultConfig() (20) before merging the file, so an operator who omits the key gets 20, and
+//     that path is covered by TestRegression_TwentyFirstUserDoesNotEvictTheFirstFromTheBrowser.
+//     Zero is reachable from a bare config.Config{} or an operator writing 0 outright, and it
+//     matters because it takes a different branch: the old capped-cookie write path
 //     fell back to a default of 20 for a non-positive value (config_default.go still documents
 //     that same default), so this sub-case drives past that threshold too (21 users, the same
 //     headcount as the regression test above) rather than stopping short of it, so leaving the key
@@ -287,7 +291,7 @@ func (s *deviceTrustEndToEndSuite) TestSetting_DeviceTrustMaxUsersPerDeviceIsIne
 		s.assertCapDoesNotEvictTheFirstUser(5, 6)
 	})
 
-	s.Run("cap left at its zero value (never configured)", func() {
+	s.Run("cap left at its zero value (bare struct, or explicitly set to 0)", func() {
 		s.assertCapDoesNotEvictTheFirstUser(0, 21)
 	})
 }
