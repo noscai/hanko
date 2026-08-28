@@ -371,15 +371,23 @@ func (h *UserHandler) ClearDeviceTrust(c echo.Context) error {
 		return errors.New("missing or malformed jwt")
 	}
 
-	c.SetCookie(&http.Cookie{
-		Name:     h.cfg.MFA.DeviceTrustCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteNoneMode,
-	})
+	// Both the legacy multi-user cookie (DeviceTrustCookieName) and the new
+	// per-device cookie (DeviceTrustDeviceCookieName) can legitimately be
+	// present on a browser during the migration window - clients don't all
+	// pick up the new cookie in the same request. Clearing only one leaves
+	// the other cookie proving trust, so the browser stays trusted while
+	// this endpoint reports success.
+	for _, cookieName := range []string{h.cfg.MFA.DeviceTrustCookieName, h.cfg.MFA.DeviceTrustDeviceCookieName} {
+		c.SetCookie(&http.Cookie{
+			Name:     cookieName,
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteNoneMode,
+		})
+	}
 
 	return c.NoContent(http.StatusNoContent)
 }
