@@ -66,9 +66,15 @@ func (p *trustedDevicePersister) Create(trustedDevice models.TrustedDevice) erro
 	return nil
 }
 
-// FindByDeviceToken is the legacy (v0/v1 cookie) lookup -- device_token alone, no user scoping.
-// Left unchanged for those read paths; FindValidTrust is the (device_token, user_id)-scoped
-// counterpart new callers should use.
+// FindByDeviceToken answers "has this device token ever been issued?" -- device_token alone, no
+// user scoping. Its only production caller is the write path's anti-planting gate
+// (IssueTrustDeviceCookie), which reuses a token presented in the cookie only if it already backs
+// at least one row; without that check somebody with devtools access to a shared workstation could
+// plant a token they choose and have every later truster's row filed under it.
+//
+// The unscoped lookup is therefore deliberate and must stay unscoped -- but for that reason it must
+// never be used to decide whether a user is trusted. FindValidTrust is the scoped counterpart every
+// read path uses. (This was the v0/v1 read lookup until those branches moved to FindValidTrust.)
 func (p *trustedDevicePersister) FindByDeviceToken(token string) (*models.TrustedDevice, error) {
 	return p.findOne(p.db.Where("device_token = ?", token))
 }
