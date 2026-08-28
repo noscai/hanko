@@ -289,6 +289,18 @@ func ParseDeviceIDCookie(cookieValue string) (token string, ok bool) {
 	return rest, true
 }
 
+// FormatDeviceIDCookie encodes a bare device token as a v2 device-scoped cookie value
+// ("d1.<token>"). The exact inverse of ParseDeviceIDCookie, and here rather than in the issuing
+// hook so the cookie's writer and its reader share one definition of deviceTokenPrefix -- the
+// same invariant-I1 reasoning that makes isLegacyBareToken shared rather than duplicated. A hook
+// in another package cannot see the unexported prefix, so without this it would have to restate
+// "d1." literally, and the day either side moved the two would disagree silently: the writer
+// would emit a value CheckDeviceTrust's v2 branch no longer recognizes, and every user on a
+// shared device would be re-challenged for a full 2FA code with nothing failing loudly.
+func FormatDeviceIDCookie(token string) string {
+	return deviceTokenPrefix + token
+}
+
 // SerializeDeviceTrustCookie serializes device trust entries into a composite cookie value.
 // Format: <user_id_1>:<token_1>|<user_id_2>:<token_2>|...
 func (s DeviceTrustService) SerializeDeviceTrustCookie(entries []DeviceTrustEntry) string {
