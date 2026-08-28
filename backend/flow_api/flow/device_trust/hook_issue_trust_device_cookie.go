@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gofrs/uuid"
+	zeroLogger "github.com/rs/zerolog/log"
 	"github.com/teamhanko/hanko/backend/v2/flow_api/flow/shared"
 	"github.com/teamhanko/hanko/backend/v2/flow_api/services"
 	"github.com/teamhanko/hanko/backend/v2/flowpilot"
@@ -13,6 +14,15 @@ import (
 // deviceTokenBytes is the entropy behind a device token, base64url-encoded into the cookie (64
 // bytes -> 88 chars, inside models.TrustedDevice's 64..128 length validation).
 const deviceTokenBytes = 64
+
+// maxCookieBytes is the browser-side ceiling on one Set-Cookie value (RFC 6265 recommends 4096
+// bytes and every mainstream browser enforces it). Past this a browser does not truncate or
+// reject just the new cookie -- it silently discards the entire Cookie header for that domain, so
+// every OTHER cookie for it (including one that already granted a colleague's trust) vanishes
+// with no error surfaced anywhere: not in hanko, not in the browser, not in any log. That silent
+// whole-jar loss is exactly how the original per-user-list cookie went undetected until this bug
+// was found by hand.
+const maxCookieBytes = 4096
 
 type IssueTrustDeviceCookie struct {
 	shared.Action
@@ -81,6 +91,32 @@ func (h IssueTrustDeviceCookie) Execute(c flowpilot.HookExecutionContext) error 
 	cookie.Secure = true
 	cookie.MaxAge = maxAge
 	cookie.SameSite = http.SameSiteNoneMode
+
+	// Regression armor for a condition the current format cannot reach, not a live fix: the v2
+	// cookie is one token at a constant ~164 bytes, independent of how many people trust this
+	// browser (see the "cookie size is independent of user count" test, asserted at 1/21/50/500
+	// existing rows) -- nowhere near the 4096-byte cap this checks. Its job is to catch a FUTURE
+	// regression: if some later change makes the cookie grow again (e.g. a per-entry list, the
+	// exact shape this file replaced), this fails loudly right here instead of the browser
+	// silently dropping the entire cookie jar for the domain -- see maxCookieBytes' comment for
+	// why that failure mode is so much worse than refusing one write.
+	//
+	// By this point CreateTrustedDevice has already persisted the row (it runs above, before the
+	// cookie is built), so firing here leaves that row in place without a cookie that can ever
+	// present it back. That is the deliberately chosen side: the row is inert -- nobody can
+	// present a token that was never handed to a browser, so it grants no one anything, and it
+	// ages out on the same expiry as any other row. The alternative (checking size before
+	// persisting) would mean deciding whether to persist based on the fully-built cookie, i.e.
+	// moving the persist call below the cookie construction it currently precedes -- a structural
+	// reorder of the hook for a branch that cannot fire under this format, to protect a byte count
+	// that must already be near the cap for genuinely unrelated reasons (see maxCookieBytes) before
+	// this ever matters.
+	if serialized := cookie.String(); len(serialized) > maxCookieBytes {
+		zeroLogger.Warn().
+			Int("cookie_bytes", len(serialized)).
+			Msg("device trust cookie exceeds the browser's 4096-byte cap; refusing to write it")
+		return nil
+	}
 
 	deps.HttpContext.SetCookie(cookie)
 

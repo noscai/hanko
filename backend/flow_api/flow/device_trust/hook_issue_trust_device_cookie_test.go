@@ -1,7 +1,9 @@
 package device_trust
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +13,8 @@ import (
 	"github.com/gobuffalo/pop/v6"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/rs/zerolog"
+	zlog "github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -379,9 +383,13 @@ func TestIssueTrustDeviceCookie_Execute_EmittedCookieSatisfiesCheckDeviceTrust(t
 	req.AddCookie(cookies[0])
 	readCtx := e.NewContext(req, httptest.NewRecorder())
 
-	// The legacy cookie name is blanked on the read side so CheckDeviceTrust's v1 and v0 branches
-	// cannot fire: whatever validates here validated through the v2 branch, which is the one this
-	// hook now feeds.
+	// v1/v0 cannot fire here regardless of this line: readCtx wraps a brand-new
+	// httptest.NewRequest that only ever received cookies[0] (the v2 cookie the hook just wrote),
+	// so there is no legacy-named cookie on the request for CheckDeviceTrust's v1/v0 branches to
+	// find no matter what DeviceTrustCookieName is set to -- confirmed by removing this line and
+	// seeing the test still pass identically. Blanking it anyway is belt-and-braces: it costs
+	// nothing here and keeps this assertion (that validation happened through v2, not v1/v0) true
+	// even if a future refactor starts reusing the write-side request/cookie jar on the read side.
 	readCfg := deps.Cfg
 	readCfg.MFA.DeviceTrustCookieName = ""
 
@@ -480,4 +488,165 @@ func TestIssueTrustDeviceCookie_Execute_ErrorsWhenPersistFails(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Empty(t, rec.Header().Get("Set-Cookie"), "no cookie may be written if the persist failed")
+}
+
+// --- Task 8: the 4096-byte cookie guard ------------------------------------------------------
+//
+// The v2 cookie built above is one token at a constant ~164 bytes (Name + "d1." + 88-char token +
+// attributes), regardless of how many people trust the browser -- see
+// TestIssueTrustDeviceCookie_Execute_CookieSizeIsIndependentOfUserCount above and
+// TestIssueTrustDeviceCookie_Execute_ByteGuardNeverFiresUnderV2Format below. That means the guard
+// itself can never fire from anything the v2 format alone produces; the only legitimate way to
+// drive it is a config-driven input that also feeds http.Cookie.String() -- the cookie's NAME
+// (deps.Cfg.MFA.DeviceTrustDeviceCookieName), which is operator-controlled and unrelated to the
+// token machinery. That is deliberately used below instead of adding any test-only seam to
+// production code.
+
+// captureWarnLogs redirects the process-wide zerolog logger (github.com/rs/zerolog/log) to a
+// buffer for the duration of fn and returns what it wrote, then restores the original logger.
+// The hook has no injected logger of its own -- shared.Dependencies only carries AuditLogger,
+// which persists structured audit rows to the DB, a different concern -- so, like every other WARN
+// this codebase emits outside a request handler (handler/passcode.go, session/template.go,
+// thirdparty/provider_apple.go), the byte-cap guard logs through this same global package logger.
+// Swapping its package-level Logger var for the call is the standard way to observe it in a test;
+// nothing here touches production code or adds a logging dependency.
+func captureWarnLogs(t *testing.T, fn func()) string {
+	t.Helper()
+	var buf bytes.Buffer
+	original := zlog.Logger
+	zlog.Logger = zerolog.New(&buf)
+	defer func() { zlog.Logger = original }()
+	fn()
+	return buf.String()
+}
+
+// cookieSerializationOverhead returns how many bytes http.Cookie.String() spends on everything
+// except the cookie's Name, for the exact Value/Path/HttpOnly/Secure/MaxAge/SameSite
+// IssueTrustDeviceCookie always builds. The Value length is fixed regardless of whether the token
+// is reused or freshly minted: base64.URLEncoding always pads a 64-byte input to 88 characters.
+// Used to pick a cookie NAME long enough to land the total serialized cookie at an exact target
+// byte count.
+func cookieSerializationOverhead(t *testing.T, maxAge int) int {
+	t.Helper()
+	probe := &http.Cookie{
+		Name:     "n",
+		Value:    services.FormatDeviceIDCookie(knownDeviceToken),
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		MaxAge:   maxAge,
+		SameSite: http.SameSiteNoneMode,
+	}
+	return len(probe.String()) - len(probe.Name)
+}
+
+// cookieNameForTargetBytes returns a cookie name (all valid HTTP token characters, so
+// http.Cookie.String() never rejects it regardless of length) that makes the hook's emitted
+// Set-Cookie serialize to exactly target bytes.
+func cookieNameForTargetBytes(t *testing.T, maxAge, target int) string {
+	t.Helper()
+	overhead := cookieSerializationOverhead(t, maxAge)
+	nameLen := target - overhead
+	require.Positive(t, nameLen, "target %d bytes is smaller than the fixed cookie overhead %d", target, overhead)
+	return strings.Repeat("n", nameLen)
+}
+
+// durationSeconds168h is the maxAge (seconds) every test below computes cookie overhead for,
+// matching the 168*time.Hour duration each of them passes to trustDeps/trustDepsWithCookies.
+const durationSeconds168h = int(168 * time.Hour / time.Second)
+
+// A cookie whose serialized length would exceed the 4096-byte cap must not be written at all, and
+// the hook must emit exactly one WARN naming the actual byte count. The row is still expected to
+// have been persisted (CreateTrustedDevice runs before the cookie is built) -- see the comment on
+// the guard in Execute for why that ordering is the deliberately chosen side: an orphaned row that
+// nobody can ever present is inert, whereas checking size before persisting would mean
+// restructuring the hook around a branch the current format cannot reach.
+func TestIssueTrustDeviceCookie_Execute_RefusesOversizedCookie(t *testing.T) {
+	const targetBytes = maxCookieBytes + 500 // comfortably over the cap, not a boundary probe
+
+	persister := &fakeTrustedDevicePersister{}
+	deps, rec := trustDeps("always", 168*time.Hour, persister, "")
+	deps.Cfg.MFA.DeviceTrustDeviceCookieName = cookieNameForTargetBytes(t, durationSeconds168h, targetBytes)
+	ctx := newIssueCookieCtx(deps)
+	require.NoError(t, ctx.Stash().Set(shared.StashPathUserID, uuid.Must(uuid.NewV4()).String()))
+
+	var err error
+	logOutput := captureWarnLogs(t, func() {
+		err = IssueTrustDeviceCookie{}.Execute(ctx)
+	})
+
+	require.NoError(t, err, "an oversized cookie must not fail the hook, only skip the write")
+	assert.Empty(t, writtenCookies(rec), "a cookie over the 4096-byte cap must never be written")
+	require.Equal(t, 1, strings.Count(logOutput, `"level":"warn"`), "exactly one WARN must be emitted:\n%s", logOutput)
+	assert.Contains(t, logOutput, fmt.Sprintf("%d", targetBytes), "the WARN must name the actual byte count")
+	assert.Len(t, persister.created, 1, "the trusted-device row is already persisted by the time the byte guard runs")
+}
+
+// The cap is exclusive: a cookie that serializes to exactly 4096 bytes is still under the
+// browser's limit and must still be written (with no WARN), while one byte more must be refused.
+// This is the off-by-one check -- ">" not ">=", and not "> 4096 - 1".
+func TestIssueTrustDeviceCookie_Execute_ByteGuardBoundary(t *testing.T) {
+	t.Run("exactly at the cap is written", func(t *testing.T) {
+		persister := &fakeTrustedDevicePersister{}
+		deps, rec := trustDeps("always", 168*time.Hour, persister, "")
+		deps.Cfg.MFA.DeviceTrustDeviceCookieName = cookieNameForTargetBytes(t, durationSeconds168h, maxCookieBytes)
+		ctx := newIssueCookieCtx(deps)
+		require.NoError(t, ctx.Stash().Set(shared.StashPathUserID, uuid.Must(uuid.NewV4()).String()))
+
+		var err error
+		logOutput := captureWarnLogs(t, func() {
+			err = IssueTrustDeviceCookie{}.Execute(ctx)
+		})
+
+		require.NoError(t, err)
+		cookies := writtenCookies(rec)
+		require.Len(t, cookies, 1, "a cookie of exactly %d bytes must still be written", maxCookieBytes)
+		// Sanity on the probe itself, not a re-derived value: the Set-Cookie header IS
+		// cookie.String() (what net/http's SetCookie writes verbatim), so its raw length -- not a
+		// round trip through Cookies() re-parsing -- confirms the target was hit exactly.
+		require.Equal(t, maxCookieBytes, len(rec.Header().Get("Set-Cookie")), "sanity: the probe must have landed exactly on the cap")
+		assert.Empty(t, logOutput, "no WARN may be emitted for a cookie at the cap")
+	})
+
+	t.Run("one byte over the cap is refused", func(t *testing.T) {
+		persister := &fakeTrustedDevicePersister{}
+		deps, rec := trustDeps("always", 168*time.Hour, persister, "")
+		deps.Cfg.MFA.DeviceTrustDeviceCookieName = cookieNameForTargetBytes(t, durationSeconds168h, maxCookieBytes+1)
+		ctx := newIssueCookieCtx(deps)
+		require.NoError(t, ctx.Stash().Set(shared.StashPathUserID, uuid.Must(uuid.NewV4()).String()))
+
+		var err error
+		logOutput := captureWarnLogs(t, func() {
+			err = IssueTrustDeviceCookie{}.Execute(ctx)
+		})
+
+		require.NoError(t, err)
+		assert.Empty(t, writtenCookies(rec), "a cookie of %d bytes (one over the cap) must not be written", maxCookieBytes+1)
+		assert.Contains(t, logOutput, fmt.Sprintf("%d", maxCookieBytes+1))
+	})
+}
+
+// The whole point of the v2 format is that this guard is unreachable at any headcount -- unlike
+// the old per-user cookie, whose Set-Cookie grew ~60 bytes per colleague and would have crossed
+// 4096 bytes well before its own 20-user truncation even engaged. Assert the guard stays silent
+// (cookie written, no WARN) at 1, 21, 50 and 500 existing trusted_devices rows for the browser.
+func TestIssueTrustDeviceCookie_Execute_ByteGuardNeverFiresUnderV2Format(t *testing.T) {
+	for _, existingUsers := range []int{1, 21, 50, 500} {
+		t.Run(fmt.Sprintf("%d existing users", existingUsers), func(t *testing.T) {
+			persister := &fakeTrustedDevicePersister{rowsByToken: map[string]int{knownDeviceToken: existingUsers}}
+			deps, rec := trustDepsWithCookies("always", 168*time.Hour, persister,
+				legacyMultiUserCookie(existingUsers), "d1."+knownDeviceToken)
+			ctx := newIssueCookieCtx(deps)
+			require.NoError(t, ctx.Stash().Set(shared.StashPathUserID, uuid.Must(uuid.NewV4()).String()))
+
+			var err error
+			logOutput := captureWarnLogs(t, func() {
+				err = IssueTrustDeviceCookie{}.Execute(ctx)
+			})
+
+			require.NoError(t, err)
+			requireSingleDeviceCookie(t, rec)
+			assert.Empty(t, logOutput, "the byte guard must not fire under the v2 format at %d existing users", existingUsers)
+		})
+	}
 }
