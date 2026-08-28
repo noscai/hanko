@@ -197,15 +197,19 @@ func (s DeviceTrustService) ParseDeviceTrustCookie(cookieValue string) []DeviceT
 	return entries
 }
 
-// ParseDeviceCookieToken decodes a v2 device-scoped cookie value ("d1.<token>") into its bare
-// token. A pure function, deliberately independent of DeviceTrustService (no receiver, no DB, no
-// echo context) so the v0/v1/v2 discrimination rule stays testable in isolation from the rest of
-// the cookie machinery.
+// ParseDeviceIDCookie decodes a v2 device-scoped cookie value ("d1.<token>") into its bare
+// token. Named for the cookie it reads (clinicos-2fa-device-id, config key
+// device_trust_device_cookie_name) rather than "v2" or "...Token" -- it sits ~35 lines from
+// ParseDeviceTrustCookie, which parses a different cookie into a different shape
+// ([]DeviceTrustEntry vs (string, bool)); a same-prefixed name would make the two easy to
+// transpose once later tasks wire both into the same resolution path. A pure function,
+// deliberately independent of DeviceTrustService (no receiver, no DB, no echo context) so the
+// v0/v1/v2 discrimination rule stays testable in isolation from the rest of the cookie machinery.
 //
 // Rejects an empty remainder ("d1." -> ("", false)) rather than returning ok=true with an empty
-// token: an empty token must never reach FindByDeviceToken, where it could match a row created
-// with an empty DeviceToken instead of failing closed.
-func ParseDeviceCookieToken(cookieValue string) (token string, ok bool) {
+// token: defense-in-depth -- fail closed here rather than trust the downstream DB constraints
+// (TrustedDevice.DeviceToken's StringIsPresent + StringLengthInRange) to hold forever.
+func ParseDeviceIDCookie(cookieValue string) (token string, ok bool) {
 	rest, found := strings.CutPrefix(cookieValue, deviceTokenPrefix)
 	if !found || rest == "" {
 		return "", false

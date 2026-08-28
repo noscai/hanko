@@ -360,13 +360,13 @@ func TestMergeDeviceTrustEntries_NonPositiveMaxUsersFallsBackToDefault(t *testin
 	}
 }
 
-// ---- ParseDeviceCookieToken: v2 device-scoped cookie decode ----
+// ---- ParseDeviceIDCookie: v2 device-scoped cookie decode (archon#2528) ----
 
-// TestParseDeviceCookieToken exercises the "d1." prefix that makes the v2 device-scoped cookie
+// TestParseDeviceIDCookie exercises the "d1." prefix that makes the v2 device-scoped cookie
 // format unambiguous against v0 (bare token) and v1 (composite) values. Without the prefix,
 // ParseDeviceTrustCookie's separator-based sniffing would misread a v2 value as v0 and route it
 // to a single-row lookup, silently breaking trust for every other user on a shared device.
-func TestParseDeviceCookieToken(t *testing.T) {
+func TestParseDeviceIDCookie(t *testing.T) {
 	uid := uuid.Must(uuid.NewV4())
 	token := randToken(t)
 
@@ -416,7 +416,7 @@ func TestParseDeviceCookieToken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotToken, gotOK := ParseDeviceCookieToken(tt.cookieValue)
+			gotToken, gotOK := ParseDeviceIDCookie(tt.cookieValue)
 			assert.Equal(t, tt.wantOK, gotOK)
 			assert.Equal(t, tt.wantToken, gotToken)
 		})
