@@ -798,7 +798,7 @@
         },
         "device_trust_id_cookie_name": {
           "type": "string",
-          "description": "`device_trust_id_cookie_name` is the name of the cookie used to store a single device identity for device\ntrust. Like `device_trust_cookie_name`, renaming this value after rollout is a one-way door: browsers keep\nsending the token under the old cookie name, the server looks for the new name, and every existing cookie on\nevery device becomes unreadable at once — evicting every user's device trust in a single deploy, not just the\ndevice that happens to trust next.",
+          "description": "`device_trust_id_cookie_name` is the name of the cookie used to store a single device identity for device\ntrust. Like `device_trust_cookie_name`, renaming this value after rollout is a one-way door: browsers keep\nsending the token under the old cookie name, the server looks for the new name, and every existing cookie on\nevery device becomes unreadable at once — evicting every user's device trust in a single deploy, not just the\ndevice that happens to trust next.\n\nThe FIRST rollout has an ordering requirement for the same reason: config.Load unmarshals via koanf, which\nignores unknown keys, so an OLD image reading a config that already sets this key is a no-op. The reverse is\nnot: a NEW image reaching a cluster whose config lacks the key falls back to the default below and issues\ndevice cookies under THAT name, which go dead the moment the config catches up. Land the config at or before\nthe image, never after.",
           "default": "hanko-device-id"
         },
         "device_trust_duration": {

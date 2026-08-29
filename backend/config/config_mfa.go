@@ -40,6 +40,12 @@ type MFA struct {
 	// sending the token under the old cookie name, the server looks for the new name, and every existing cookie on
 	// every device becomes unreadable at once — evicting every user's device trust in a single deploy, not just the
 	// device that happens to trust next.
+	//
+	// The FIRST rollout has an ordering requirement for the same reason: config.Load unmarshals via koanf, which
+	// ignores unknown keys, so an OLD image reading a config that already sets this key is a no-op. The reverse is
+	// not: a NEW image reaching a cluster whose config lacks the key falls back to the default below and issues
+	// device cookies under THAT name, which go dead the moment the config catches up. Land the config at or before
+	// the image, never after.
 	DeviceTrustIDCookieName string `yaml:"device_trust_id_cookie_name" json:"device_trust_id_cookie_name,omitempty" koanf:"device_trust_id_cookie_name" jsonschema:"default=hanko-device-id"`
 	// `device_trust_duration` configures the duration a device remains trusted after authentication; once expired, the
 	// user must reauthenticate with MFA.
