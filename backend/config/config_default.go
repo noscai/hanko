@@ -221,6 +221,7 @@ func DefaultConfig() *Config {
 			AcquireOnLogin:               false,
 			AcquireOnRegistration:        true,
 			DeviceTrustCookieName:        "hanko-device-token",
+			DeviceTrustIDCookieName:      "hanko-device-id",
 			DeviceTrustDuration:          30 * 24 * time.Hour, // 30 days
 			DeviceTrustMaxUsersPerDevice: 20,
 			DeviceTrustPolicy:            "prompt",

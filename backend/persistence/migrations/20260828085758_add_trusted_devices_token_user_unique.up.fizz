@@ -1,0 +1,11 @@
+sql("DELETE FROM trusted_devices WHERE id IN (SELECT id FROM (SELECT id, row_number() OVER (PARTITION BY device_token, user_id ORDER BY expires_at DESC NULLS LAST, id DESC) AS rn FROM trusted_devices) t WHERE t.rn > 1)")
+sql("CREATE UNIQUE INDEX trusted_devices_token_user_idx ON trusted_devices (device_token, user_id)")
+# The DELETE keeps one row per (device_token, user_id) -- the latest expires_at, id DESC to break
+# ties -- so the unique index above cannot fail on data. It is expected to delete nothing: every
+# revision of the write path has always minted a fresh random device_token, so the pair is already
+# unique for every row hanko wrote. It exists for what bypassed that: manual edits, imports, a
+# partial restore. Migrations run in a login-service initContainer, so a failed CREATE UNIQUE INDEX
+# means no pod, which means nobody logs in -- 2FA users or not. One extra 2FA challenge for a user
+# whose duplicate row was dropped is the cheaper failure by a wide margin.
+# Comments must stay BELOW the sql() calls: .fizz is run through plush.RunScript, and a leading
+# comment corrupts the token stream ("no prefix parse function for ) found").
