@@ -858,6 +858,23 @@
       ]
     },
     "MultiTenant": {
+      "if": {
+        "properties": {
+          "keep_users_global": {
+            "const": true
+          }
+        },
+        "required": [
+          "keep_users_global"
+        ]
+      },
+      "then": {
+        "properties": {
+          "allow_global_users": {
+            "const": true
+          }
+        }
+      },
       "properties": {
         "enabled": {
           "type": "boolean",

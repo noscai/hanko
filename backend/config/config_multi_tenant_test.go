@@ -3,6 +3,7 @@ package config
 import (
 	"testing"
 
+	"github.com/invopop/jsonschema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -63,4 +64,20 @@ func TestKeepUsersGlobalFromEnvironment(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, cfg.MultiTenant.KeepUsersGlobal)
+}
+
+func TestMultiTenant_JSONSchemaRequiresGlobalUsersWhenKeepingUsersGlobal(t *testing.T) {
+	schema := &jsonschema.Schema{}
+
+	MultiTenant{}.JSONSchemaExtend(schema)
+
+	require.NotNil(t, schema.If)
+	require.NotNil(t, schema.Then)
+	assert.Equal(t, []string{"keep_users_global"}, schema.If.Required)
+	keep, ok := schema.If.Properties.Get("keep_users_global")
+	require.True(t, ok)
+	assert.Equal(t, true, keep.Const)
+	allow, ok := schema.Then.Properties.Get("allow_global_users")
+	require.True(t, ok)
+	assert.Equal(t, true, allow.Const)
 }

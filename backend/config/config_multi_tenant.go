@@ -1,6 +1,11 @@
 package config
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/invopop/jsonschema"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
+)
 
 // MultiTenant configures multi-tenant mode for Hanko
 type MultiTenant struct {
@@ -57,4 +62,24 @@ func (m *MultiTenant) Validate() error {
 		return errors.New("keep_users_global requires allow_global_users to be true: users kept global have no tenant, and allow_global_users=false refuses tenant-less users")
 	}
 	return nil
+}
+
+// JSONSchemaExtend mirrors Validate in the generated schema: keep_users_global needs
+// allow_global_users, so editors and CI refuse the combination the loader refuses.
+func (MultiTenant) JSONSchemaExtend(schema *jsonschema.Schema) {
+	schema.If = &jsonschema.Schema{
+		Properties: func() *orderedmap.OrderedMap[string, *jsonschema.Schema] {
+			props := orderedmap.New[string, *jsonschema.Schema]()
+			props.Set("keep_users_global", &jsonschema.Schema{Const: true})
+			return props
+		}(),
+		Required: []string{"keep_users_global"},
+	}
+	schema.Then = &jsonschema.Schema{
+		Properties: func() *orderedmap.OrderedMap[string, *jsonschema.Schema] {
+			props := orderedmap.New[string, *jsonschema.Schema]()
+			props.Set("allow_global_users", &jsonschema.Schema{Const: true})
+			return props
+		}(),
+	}
 }

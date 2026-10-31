@@ -181,6 +181,19 @@ global (`tenant_id = NULL`) and logs in to every tenant they belong to with the 
 adopted before the option was turned on stay adopted (un-adopting them is a separate data
 migration), and registration under an `X-Tenant-ID` header still creates a tenant-bound user.
 
+> **Do not enable `keep_users_global` on a running deployment without its rollout.** Two things
+> must come first:
+> 1. **Sessions must carry the flow tenant.** A kept-global user has no `tenant_id`, so their
+>    session JWT carries no `tenant_id` claim. A relying party that checks the claim (ClinicOS
+>    does) refuses those sessions, and one that trusts it has nothing to bind. Wait until the
+>    change that stamps the flow tenant into a kept-global user's session is deployed (ClinicOS:
+>    archon#1085 task 17).
+> 2. **Users must be un-adopted, one way.** Already-adopted users stay bound until they are
+>    un-adopted (`tenant_id = NULL` on the user and related rows). That data step can't be undone
+>    by turning the flag off again, and it can collide with the global unique email index. Run it
+>    from a reviewed runbook, after a verified database snapshot, with before/after counts
+>    (ClinicOS: archon#1085 task 34).
+
 ### Verify Migration Success
 
 Check the logs to ensure migrations ran successfully:
