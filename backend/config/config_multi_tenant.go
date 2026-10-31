@@ -1,5 +1,7 @@
 package config
 
+import "errors"
+
 // MultiTenant configures multi-tenant mode for Hanko
 type MultiTenant struct {
 	// Enabled enables multi-tenant mode. When disabled (default), Hanko operates in single-tenant mode
@@ -39,4 +41,14 @@ func DefaultMultiTenantConfig() MultiTenant {
 		AutoProvision:    true,
 		KeepUsersGlobal:  false,
 	}
+}
+
+// Validate refuses keep_users_global without allow_global_users. A user kept global has no
+// tenant, and the pre-authenticated step-up refuses tenant-less users when global users are
+// disabled, so the pair would let a login succeed and then fail every step-up for that user.
+func (m *MultiTenant) Validate() error {
+	if m.KeepUsersGlobal && !m.AllowGlobalUsers {
+		return errors.New("keep_users_global requires allow_global_users to be true: users kept global have no tenant, and allow_global_users=false refuses tenant-less users")
+	}
+	return nil
 }
