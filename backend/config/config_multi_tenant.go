@@ -33,6 +33,8 @@ type MultiTenant struct {
 	// header still creates a tenant-bound user, and users adopted before it was turned on stay
 	// adopted. Requires allow_global_users to be true. Environment variable:
 	// MULTI_TENANT_KEEP_USERS_GLOBAL.
+	// Do not enable it on a cluster before archon#1085 task 17 runs on that cluster's Hanko: until
+	// then a kept-global user's session JWT carries no tenant_id.
 	// When false (default), the historical single-tenant adoption behaviour is preserved.
 	KeepUsersGlobal bool `yaml:"keep_users_global" json:"keep_users_global,omitempty" koanf:"keep_users_global" split_words:"true" jsonschema:"default=false"`
 }

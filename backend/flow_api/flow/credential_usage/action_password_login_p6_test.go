@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofrs/uuid"
 	"github.com/sethvargo/go-limiter/memorystore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -142,6 +143,52 @@ func TestPasswordLogin_Execute_EmailAdoptError(t *testing.T) {
 	require.NoError(t, ctx.Stash().Set(shared.StashPathEmail, "user@example.com"))
 
 	require.Error(t, PasswordLogin{}.Execute(ctx))
+}
+
+// passwordLoginUnder runs one password login for user@example.com with tenant as the request tenant.
+func passwordLoginUnder(t *testing.T, deps *shared.Dependencies, tenant uuid.UUID) *fakeLoginCtx {
+	t.Helper()
+	deps.TenantID = &tenant
+	ctx := newLoginCtx(deps, map[string]interface{}{"password": "secret"})
+	require.NoError(t, ctx.Stash().Set(shared.StashPathEmail, "user@example.com"))
+	require.NoError(t, PasswordLogin{}.Execute(ctx))
+	return ctx
+}
+
+// archon#1085 6.2 #19 with keep_users_global: one person logs in under clinic A, then under clinic
+// B. The identity stays global, so the B login still finds them and both logins proceed.
+func TestPasswordLogin_Execute_KeptGlobalUserLogsInUnderTenantAThenB(t *testing.T) {
+	deps, _, pw, _ := loginDeps()
+	deps.Cfg.MultiTenant.KeepUsersGlobal = true
+	users := withGlobalUser(deps, "user@example.com")
+
+	underA := passwordLoginUnder(t, deps, tenantA)
+	require.True(t, underA.continued, "the login under tenant A must proceed")
+	assert.Nil(t, users.user.TenantID, "the login under tenant A must leave the identity global")
+
+	pw.verifiedFor = uuid.Nil
+	underB := passwordLoginUnder(t, deps, tenantB)
+	assert.True(t, underB.continued, "the login under tenant B must still find the same user")
+	assert.False(t, underB.errored)
+	assert.Equal(t, userID, pw.verifiedFor, "tenant B must verify the password of the same user")
+	assert.Equal(t, 0, users.adoptCalls, "no tenant may adopt a kept-global user")
+}
+
+// archon#1085 6.2 #19 without keep_users_global: the bug the flag removes. The login under A adopts
+// the user into A, so the global fallback no longer matches and the login under B finds nobody.
+func TestPasswordLogin_Execute_AdoptedUserNotFoundUnderTenantB(t *testing.T) {
+	deps, _, _, _ := loginDeps()
+	users := withGlobalUser(deps, "user@example.com")
+
+	underA := passwordLoginUnder(t, deps, tenantA)
+	require.True(t, underA.continued)
+	require.NotNil(t, users.user.TenantID)
+	assert.Equal(t, tenantA, *users.user.TenantID, "the first login adopts the user into tenant A")
+
+	underB := passwordLoginUnder(t, deps, tenantB)
+	assert.True(t, underB.errored, "the user adopted into A is not found under B")
+	assert.False(t, underB.continued)
+	assert.Equal(t, 1, users.adoptCalls)
 }
 
 // Happy path via username.
