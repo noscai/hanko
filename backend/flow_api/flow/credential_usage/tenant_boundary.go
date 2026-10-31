@@ -66,12 +66,16 @@ func validateTenantBoundary(
 //
 // Split from validateTenantBoundary so the boundary stays a pure decision: adoption writes to the
 // database and therefore belongs with the lookup.
+//
+// Under keep_users_global a global user is never adopted, the same rule as the password and
+// login-identifier flows (shouldAdoptUserToTenant): their identity serves every clinic they
+// belong to, and an adoption here would lock them out of the next clinic's step-up.
 func shouldAdoptGlobalUser(
 	user *models.User,
 	claimsTenantID string,
 	cfg config.MultiTenant,
 ) (bool, uuid.UUID) {
-	if !cfg.Enabled || user.TenantID != nil {
+	if !cfg.Enabled || cfg.KeepUsersGlobal || user.TenantID != nil {
 		return false, uuid.Nil
 	}
 

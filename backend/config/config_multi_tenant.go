@@ -24,8 +24,9 @@ type MultiTenant struct {
 	// to the first tenant they authenticate against. When true, a user found via the
 	// global fallback (tenant_id IS NULL) is NOT bound to the login tenant, so the same
 	// identity can authenticate against every tenant it is a member of — the prerequisite
-	// for the ClinicOS in-app organisation switcher (Archon #1085 §8.8). Tenant scoping is
-	// then governed by the control-plane membership registry, not Hanko's user.tenant_id.
+	// for the ClinicOS in-app organisation switcher (archon#1085 task 16). Which clinics a person
+	// belongs to is then decided by ClinicOS (its user rows that share this Hanko user), not by
+	// Hanko's single user.tenant_id. This covers the pre-authenticated path too.
 	// When false (default), the historical single-tenant adoption behaviour is preserved.
 	KeepUsersGlobal bool `yaml:"keep_users_global" json:"keep_users_global,omitempty" koanf:"keep_users_global" split_words:"true" jsonschema:"default=false"`
 }

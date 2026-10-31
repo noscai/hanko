@@ -9,8 +9,8 @@ import "github.com/gofrs/uuid"
 // (tenant_id IS NULL) when a tenant context is present. When keepUsersGlobal is
 // true, adoption is suppressed so the identity stays global and can authenticate
 // against every tenant it belongs to — the ClinicOS org-switch prerequisite
-// (Archon #1085 §8.8). Tenant membership is then governed by the control-plane
-// registry rather than Hanko's single user.tenant_id.
+// (archon#1085 task 16). Which clinics the person belongs to is then decided by ClinicOS
+// (its user rows that share this Hanko user), not by Hanko's single user.tenant_id.
 func shouldAdoptUserToTenant(isGlobalFallback bool, tenantID *uuid.UUID, keepUsersGlobal bool) bool {
 	return isGlobalFallback && tenantID != nil && !keepUsersGlobal
 }
