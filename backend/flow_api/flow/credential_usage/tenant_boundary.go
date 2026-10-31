@@ -16,10 +16,18 @@ import (
 // Postgres into what is pure decision logic. The boundary is the most security-relevant rule on
 // this path; it has to be assertable without a database.
 //
-// The load-bearing check is user.TenantID == claims.TenantID. Both are server-side truths: the
-// claim is HMAC-signed by clinic-os and cannot be forged without the shared secret, and the user
-// row is the database. The request tenant (X-Tenant-ID) is NOT load-bearing -- the client sets
-// that header and may omit it entirely -- so it is only ever checked as defense in depth.
+// For a tenant-bound user the load-bearing check is user.TenantID == claims.TenantID. Both are
+// server-side truths: the claim is HMAC-signed by clinic-os and cannot be forged without the shared
+// secret, and the user row is the database. The request tenant (X-Tenant-ID) is NOT load-bearing
+// for them -- the client sets that header and may omit it entirely -- so it is only ever checked
+// as defense in depth.
+//
+// A global user (tenant_id IS NULL) has no row tenant to compare. Without keep_users_global they
+// are adopted into the claimed tenant on first use, and the check above binds them from then on.
+// Under keep_users_global they are never adopted, so they are bound only by the signed claim and,
+// when the header is sent, by claim == X-Tenant-ID: a token naming any tenant is accepted for them.
+// Which clinics such a user belongs to is decided by clinic-os, which signs the claim; pinning the
+// flow tenant into their session is archon#1085 task 17.
 func validateTenantBoundary(
 	claims *ServiceTokenClaims,
 	user *models.User,
@@ -45,8 +53,9 @@ func validateTenantBoundary(
 
 	// A global user (tenant_id IS NULL) is legitimate under allow_global_users, which is what
 	// production configures. Rejecting them here would lock every legacy user out of login. The
-	// caller adopts them into the claimed tenant instead -- see shouldAdoptGlobalUser, mirroring
-	// action_password_login.go.
+	// caller adopts them into the claimed tenant instead (see shouldAdoptGlobalUser, mirroring
+	// action_password_login.go), unless keep_users_global is on: then they stay global, and the
+	// claim == request-tenant check above is the only tenant check they get here.
 	if user.TenantID == nil {
 		if !cfg.AllowGlobalUsers {
 			return fmt.Errorf("user has no tenant and global users are disabled")

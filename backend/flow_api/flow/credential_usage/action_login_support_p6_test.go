@@ -145,10 +145,12 @@ func (f *fakeLoginPersister) GetUserPersisterWithConnection(_ *pop.Connection) p
 
 type fakePasswordSvc struct {
 	services.Password
-	err error
+	err         error
+	verifiedFor uuid.UUID
 }
 
-func (f *fakePasswordSvc) VerifyPassword(_ *pop.Connection, _ uuid.UUID, _ string) error {
+func (f *fakePasswordSvc) VerifyPassword(_ *pop.Connection, userID uuid.UUID, _ string) error {
+	f.verifiedFor = userID
 	return f.err
 }
 

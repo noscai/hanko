@@ -176,6 +176,11 @@ When a global user (existing user with `tenant_id = NULL`) logs in with an `X-Te
 
 This ensures seamless migration without requiring users to re-register.
 
+Adoption is skipped when `keep_users_global: true`: the user found via the global fallback stays
+global (`tenant_id = NULL`) and logs in to every tenant they belong to with the same identity. Users
+adopted before the option was turned on stay adopted (un-adopting them is a separate data
+migration), and registration under an `X-Tenant-ID` header still creates a tenant-bound user.
+
 ### Verify Migration Success
 
 Check the logs to ensure migrations ran successfully:
@@ -203,6 +208,7 @@ You should see output indicating the migrations were applied:
 | `tenant_header` | `X-Tenant-ID` | HTTP header name for tenant ID |
 | `allow_global_users` | `true` | Allow users without tenant (backward compatible) |
 | `auto_provision` | `true` | Auto-create tenant if ID doesn't exist |
+| `keep_users_global` | `false` | Keep global users global on login instead of adopting them into the login tenant; requires `allow_global_users: true` (env: `MULTI_TENANT_KEEP_USERS_GLOBAL`) |
 
 ### Example Configurations
 

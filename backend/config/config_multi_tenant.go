@@ -29,6 +29,10 @@ type MultiTenant struct {
 	// for the ClinicOS in-app organisation switcher (archon#1085 task 16). Which clinics a person
 	// belongs to is then decided by ClinicOS (its user rows that share this Hanko user), not by
 	// Hanko's single user.tenant_id. This covers the pre-authenticated path too.
+	// It only stops the adoption of users who are already global: registration under a tenant
+	// header still creates a tenant-bound user, and users adopted before it was turned on stay
+	// adopted. Requires allow_global_users to be true. Environment variable:
+	// MULTI_TENANT_KEEP_USERS_GLOBAL.
 	// When false (default), the historical single-tenant adoption behaviour is preserved.
 	KeepUsersGlobal bool `yaml:"keep_users_global" json:"keep_users_global,omitempty" koanf:"keep_users_global" split_words:"true" jsonschema:"default=false"`
 }

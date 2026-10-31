@@ -41,3 +41,26 @@ func TestLoad_RefusesKeepUsersGlobalWithoutGlobalUsers(t *testing.T) {
 	require.Error(t, err, "the contradictory pair must be refused at config load")
 	assert.Contains(t, err.Error(), "keep_users_global requires allow_global_users")
 }
+
+func TestDefaultConfigKeepUsersGlobal(t *testing.T) {
+	cfg := DefaultConfig()
+	assert.False(t, cfg.MultiTenant.KeepUsersGlobal, "adoption stays on unless a deployment opts out")
+}
+
+func TestParseKeepUsersGlobalConfig(t *testing.T) {
+	configPath := "./multi-tenant-keep-users-global-config.yaml"
+	cfg, err := Load(&configPath)
+	require.NoError(t, err)
+
+	assert.True(t, cfg.MultiTenant.KeepUsersGlobal)
+}
+
+func TestKeepUsersGlobalFromEnvironment(t *testing.T) {
+	t.Setenv("MULTI_TENANT_KEEP_USERS_GLOBAL", "true")
+
+	configPath := "./minimal-config.yaml"
+	cfg, err := Load(&configPath)
+	require.NoError(t, err)
+
+	assert.True(t, cfg.MultiTenant.KeepUsersGlobal)
+}

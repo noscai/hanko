@@ -103,6 +103,23 @@ func TestPasswordLogin_Execute_EmailGlobalFallbackAdopts(t *testing.T) {
 	assert.True(t, ctx.continued)
 }
 
+// keep_users_global (archon#1085 task 16): the same global email fallback is left global, and the
+// password is still verified against that global user.
+func TestPasswordLogin_Execute_EmailGlobalFallbackKeptGlobal(t *testing.T) {
+	deps, p, pw, _ := loginDeps()
+	deps.Cfg.MultiTenant.KeepUsersGlobal = true
+	p.emails.email = &models.Email{UserID: &userID, Address: "user@example.com"}
+	p.emails.isGlobal = true
+
+	ctx := newLoginCtx(deps, map[string]interface{}{"password": "secret"})
+	require.NoError(t, ctx.Stash().Set(shared.StashPathEmail, "user@example.com"))
+
+	require.NoError(t, PasswordLogin{}.Execute(ctx))
+	assert.Equal(t, 0, p.users.adoptCalls, "a kept-global user must not be adopted into the login tenant")
+	assert.Equal(t, userID, pw.verifiedFor, "the password must be checked against the global user")
+	assert.True(t, ctx.continued)
+}
+
 // A persister failure while resolving the email surfaces as a hard error.
 func TestPasswordLogin_Execute_EmailLookupError(t *testing.T) {
 	deps, p, _, _ := loginDeps()
@@ -164,6 +181,22 @@ func TestPasswordLogin_Execute_UsernameGlobalFallbackAdopts(t *testing.T) {
 
 	require.NoError(t, PasswordLogin{}.Execute(ctx))
 	assert.Equal(t, 1, p.users.adoptCalls)
+	assert.True(t, ctx.continued)
+}
+
+// keep_users_global: the global username fallback is left global and still logs in.
+func TestPasswordLogin_Execute_UsernameGlobalFallbackKeptGlobal(t *testing.T) {
+	deps, p, pw, _ := loginDeps()
+	deps.Cfg.MultiTenant.KeepUsersGlobal = true
+	p.usernames.username = &models.Username{UserId: userID, Username: "alice"}
+	p.usernames.isGlobal = true
+
+	ctx := newLoginCtx(deps, map[string]interface{}{"password": "secret"})
+	require.NoError(t, ctx.Stash().Set(shared.StashPathUsername, "alice"))
+
+	require.NoError(t, PasswordLogin{}.Execute(ctx))
+	assert.Equal(t, 0, p.users.adoptCalls, "a kept-global user must not be adopted into the login tenant")
+	assert.Equal(t, userID, pw.verifiedFor, "the password must be checked against the global user")
 	assert.True(t, ctx.continued)
 }
 
