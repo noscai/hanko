@@ -1,0 +1,25 @@
+MULTI_TENANT_DOCKER_GUIDE.md
+  s_72ae283317499b::t_d3d8593be667f6 184-196
+backend/config/config_multi_tenant.go
+  s_72ae283317499b::t_923d0225fb845c 3-8,66-85
+backend/config/config_multi_tenant_test.go
+  s_72ae283317499b::t_fb26a381143b10 6,68-83
+backend/json_schema/hanko.config.json
+  s_72ae283317499b::t_4413332de4fbab 861-877
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3e2f3b44f5b7b91079722db0d7f9df3514c1001c",
+  "prompts": {},
+  "sessions": {
+    "s_72ae283317499b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "219a2835-1bf2-4ccf-97e2-ab2fb90e92f2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}
