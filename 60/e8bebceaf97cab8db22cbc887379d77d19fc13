@@ -1,0 +1,47 @@
+backend/persistence/trusted_device_persister_integration_test.go
+  s_72ae283317499b::t_95a95224a240ef 333-367
+backend/flow_api/services/device_trust_test.go
+  s_72ae283317499b::t_ceeb25954b8bbf 568
+  s_4009020f0e5eca::t_8fb4a387cef640 29,100-104
+backend/handler/trusted_device_admin_test.go
+  s_72ae283317499b::t_0550000bc14028 1-247,249-250,252,254,256-265
+  s_72ae283317499b::t_cbdc75f537eb87 248,251,253,255
+backend/dto/admin/trusted_device.go
+  s_72ae283317499b::t_bbe71755d603b9 1-5
+backend/flow_api/flow/device_trust/hook_issue_trust_device_cookie_test.go
+  s_72ae283317499b::t_fff0a49373d352 100-104
+backend/handler/admin_router.go
+  s_72ae283317499b::t_b31c981f480c7e 106-109
+backend/handler/trusted_device_admin.go
+  s_72ae283317499b::t_b7acbdb93e30a9 1-55
+backend/persistence/trusted_device_persister.go
+  s_72ae283317499b::t_8bc2783bf006d0 23-25,101-109
+backend/test/fixtures/trusted_device_admin/trusted_devices.yaml
+  s_72ae283317499b::t_6a2d6452c7186a 1-18
+backend/test/fixtures/trusted_device_admin/users.yaml
+  s_72ae283317499b::t_b1f13cbb620dc3 1-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "60e8bebceaf97cab8db22cbc887379d77d19fc13",
+  "prompts": {},
+  "sessions": {
+    "s_4009020f0e5eca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad541cb48a251472e",
+        "model": "unknown"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    },
+    "s_72ae283317499b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "219a2835-1bf2-4ccf-97e2-ab2fb90e92f2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}
