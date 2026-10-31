@@ -330,6 +330,41 @@ func (s *trustedDevicePersisterSuite) TestCreate_RejectsDeviceTokenTooShort() {
 	s.False(exists, "an invalid model must never reach the raw-SQL upsert")
 }
 
+// TestDeleteByUserID_RemovesEveryRowOfThatUserOnly backs the admin 2FA reset: every browser the
+// user trusted, expired or not, must stop skipping the second factor, while another user trusting
+// the same shared browser (same device_token) keeps their own trust.
+func (s *trustedDevicePersisterSuite) TestDeleteByUserID_RemovesEveryRowOfThatUserOnly() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	userA := uuid.FromStringOrNil(fixtureUserID)
+	userB := uuid.FromStringOrNil(secondUserID)
+	sharedToken := strings.Repeat("j", 64)
+	ownToken := strings.Repeat("k", 64)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	_, err := s.insertTrustedDevice(sharedToken, userA, now.Add(1*time.Hour))
+	s.Require().NoError(err)
+	_, err = s.insertTrustedDevice(ownToken, userA, now.Add(-1*time.Hour))
+	s.Require().NoError(err)
+	_, err = s.insertTrustedDevice(sharedToken, userB, now.Add(1*time.Hour))
+	s.Require().NoError(err)
+
+	persister := s.Storage.GetTrustedDevicePersister()
+	s.Require().NoError(persister.DeleteByUserID(userA))
+
+	var rowsA []models.TrustedDevice
+	s.Require().NoError(s.Storage.GetConnection().Where("user_id = ?", userA).All(&rowsA))
+	s.Empty(rowsA, "every trusted device of the user must be deleted, expired ones included")
+
+	foundB, err := persister.FindValidTrust(sharedToken, userB, now)
+	s.Require().NoError(err)
+	s.NotNil(foundB, "another user trusting the same browser must keep their trust")
+
+	s.Require().NoError(persister.DeleteByUserID(userA), "deleting a user's trusted devices twice must not fail")
+}
+
 func (s *trustedDevicePersisterSuite) mustNewUUID() uuid.UUID {
 	id, err := uuid.NewV4()
 	s.Require().NoError(err)

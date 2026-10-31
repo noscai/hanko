@@ -20,6 +20,9 @@ type TrustedDevicePersister interface {
 	// for why a shared device_token makes that redundancy load-bearing rather than defensive
 	// dead code.
 	FindValidTrust(deviceToken string, userID uuid.UUID, now time.Time) (*models.TrustedDevice, error)
+	// DeleteByUserID deletes every trust row of the user, expired or not, and only that user's:
+	// another user who trusted the same browser shares its device_token but keeps their row.
+	DeleteByUserID(userID uuid.UUID) error
 }
 
 type trustedDevicePersister struct {
@@ -93,6 +96,15 @@ func (p *trustedDevicePersister) FindByDeviceToken(token string) (*models.Truste
 
 func (p *trustedDevicePersister) FindValidTrust(deviceToken string, userID uuid.UUID, now time.Time) (*models.TrustedDevice, error) {
 	return p.findOne(p.db.Where("device_token = ? AND user_id = ? AND expires_at > ?", deviceToken, userID, now))
+}
+
+func (p *trustedDevicePersister) DeleteByUserID(userID uuid.UUID) error {
+	err := p.db.RawQuery("DELETE FROM trusted_devices WHERE user_id = ?", userID).Exec()
+	if err != nil {
+		return fmt.Errorf("failed to delete trustedDevices of user: %w", err)
+	}
+
+	return nil
 }
 
 func (p *trustedDevicePersister) findOne(q *pop.Query) (*models.TrustedDevice, error) {

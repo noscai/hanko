@@ -26,7 +26,7 @@ const (
 )
 
 // fakeTrustedDevicePersister is the whole persistence dependency of DeviceTrustService. The
-// interface is three methods, which is what lets the entire service be tested with no Postgres.
+// interface is four methods, which is what lets the entire service be tested with no Postgres.
 //
 // Rows are kept as a slice rather than a token-keyed map because one device_token is now shared
 // by every user who trusted that browser (uq_trusted_devices_token_user is on the PAIR). A
@@ -95,6 +95,11 @@ func (f *fakeTrustedDevicePersister) FindValidTrust(deviceToken string, userID u
 		}
 	}
 	return nil, nil
+}
+
+// DeleteByUserID is the admin 2FA-reset path; the device-trust login flow never calls it.
+func (f *fakeTrustedDevicePersister) DeleteByUserID(uuid.UUID) error {
+	return nil
 }
 
 func (f *fakeTrustedDevicePersister) rowsFor(deviceToken string, now time.Time) []*models.TrustedDevice {
@@ -560,6 +565,7 @@ func (p *unscopedPersister) FindByDeviceToken(string) (*models.TrustedDevice, er
 func (p *unscopedPersister) FindValidTrust(string, uuid.UUID, time.Time) (*models.TrustedDevice, error) {
 	return p.row, nil
 }
+func (p *unscopedPersister) DeleteByUserID(uuid.UUID) error { return nil }
 
 // ---- CreateTrustedDevice: expiry derives from config (invariant I2 / A4) ----
 

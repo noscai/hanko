@@ -103,6 +103,10 @@ func NewAdminRouter(cfg *config.Config, persister persistence.Persister, prometh
 	otp.GET("", otpHandler.Get)
 	otp.DELETE("", otpHandler.Delete)
 
+	trustedDeviceHandler := NewTrustedDeviceAdminHandler(persister)
+	trustedDevices := user.Group("/:user_id/trusted_devices")
+	trustedDevices.DELETE("", trustedDeviceHandler.Delete)
+
 	auditLogHandler := NewAuditLogHandler(persister)
 
 	auditLogs := g.Group("/audit_logs")

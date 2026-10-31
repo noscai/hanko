@@ -97,6 +97,11 @@ func (f *fakeTrustedDevicePersister) FindValidTrust(token string, userID uuid.UU
 	return nil, nil
 }
 
+// DeleteByUserID is the admin 2FA-reset path; the device-trust login flow never calls it.
+func (f *fakeTrustedDevicePersister) DeleteByUserID(uuid.UUID) error {
+	return nil
+}
+
 // fakeTrustPersister satisfies persistence.Persister via embedding; only the accessor the hook
 // calls -- GetTrustedDevicePersisterWithConnection -- is real.
 type fakeTrustPersister struct {
