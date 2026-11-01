@@ -91,10 +91,11 @@ func (a RegisterLoginIdentifier) Execute(c flowpilot.ExecutionContext) error {
 			return err
 		}
 		if usernameModel != nil {
-			// If it's a global user and we have a tenant, they can potentially be adopted during login
-			// For registration, we still treat this as "already exists" to redirect to login flow
+			// If it's a global user and we have a tenant, they log in instead (and are adopted there
+			// unless keep_users_global). For registration we treat this as "already exists" to
+			// redirect to the login flow.
 			if isGlobalFallback && deps.TenantID != nil {
-				// Global user exists - they should use login flow to be adopted
+				// Global user exists - they should use the login flow (adopted unless keep_users_global)
 				c.Input().SetError("username", shared.ErrorUsernameAlreadyExists)
 				return c.Error(flowpilot.ErrorFormDataInvalid)
 			}
@@ -133,10 +134,10 @@ func (a RegisterLoginIdentifier) Execute(c flowpilot.ExecutionContext) error {
 				return err
 			}
 			// Do not return an error when only identifier is email and email verification is on (account enumeration protection) and privacy setting is off
-			// Note: If a global user exists, they should use the login flow to be adopted into the tenant
+			// Note: If a global user exists, they should use the login flow (adopted unless keep_users_global)
 			if emailModel != nil {
-				// If it's a global user and we have a tenant, they can potentially be adopted during login
-				_ = isGlobalFallback // Global users should use login flow to be adopted
+				// If it's a global user and we have a tenant, they log in instead (adopted unless keep_users_global)
+				_ = isGlobalFallback // Global users should use the login flow (adopted unless keep_users_global)
 				// E-mail address already exists
 				if !deps.Cfg.Email.RequireVerification || deps.Cfg.Privacy.ShowAccountExistenceHints {
 					c.Input().SetError("email", shared.ErrorEmailAlreadyExists)

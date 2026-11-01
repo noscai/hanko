@@ -175,6 +175,39 @@ func TestResolveServiceTokenUser_AdoptsGlobalUser(t *testing.T) {
 	assert.Equal(t, tenantA, *user.TenantID, "the returned user must carry the adopted tenant")
 }
 
+// keep_users_global (archon#1085 task 16): one person's identity serves every clinic they belong
+// to. Adopting them into the first tenant that pre-authenticates them would make the next clinic's
+// step-up fail the boundary, so the user stays global and each tenant's flow still resolves them.
+func TestResolveServiceTokenUser_KeepsGlobalUserGlobalAcrossTenants(t *testing.T) {
+	lookup := &fakeUserLookup{user: &models.User{ID: userID, TenantID: nil}}
+	cfg := multiTenantOn()
+	cfg.KeepUsersGlobal = true
+
+	for _, tenant := range []uuid.UUID{tenantA, tenantB} {
+		user, err := resolveServiceTokenUser(claimsFor(userID, tenant.String()), lookup, &tenant, cfg)
+
+		require.NoError(t, err)
+		require.NotNil(t, user)
+		assert.Nil(t, user.TenantID, "the identity must stay global")
+	}
+	assert.Equal(t, 0, lookup.adoptCalls, "no tenant may adopt a kept-global user")
+}
+
+// Under keep_users_global a global user has no row tenant for the claim to be checked against, so
+// claim == X-Tenant-ID is the only tenant check left on this path. A token signed for tenant A sent
+// under tenant B's header must still be refused, indistinguishably from a missing user.
+func TestResolveServiceTokenUser_KeptGlobalUserRefusedWhenRequestTenantDiffers(t *testing.T) {
+	lookup := &fakeUserLookup{user: &models.User{ID: userID, TenantID: nil}}
+	cfg := multiTenantOn()
+	cfg.KeepUsersGlobal = true
+
+	user, err := resolveServiceTokenUser(claimsFor(userID, tenantA.String()), lookup, &tenantB, cfg)
+
+	require.EqualError(t, err, "user not found")
+	assert.Nil(t, user)
+	assert.Zero(t, lookup.adoptCalls)
+}
+
 func TestResolveServiceTokenUser_FailsWhenAdoptionFails(t *testing.T) {
 	lookup := &fakeUserLookup{
 		user:     &models.User{ID: userID, TenantID: nil},

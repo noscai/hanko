@@ -25,9 +25,9 @@ type fakeSamlProvider struct {
 // fakeSamlService fakes only the two methods the email SAML branch reaches.
 type fakeSamlService struct {
 	saml.Service
-	provider   samlprovider.ServiceProvider
-	getURLErr  error
-	authURL    string
+	provider  samlprovider.ServiceProvider
+	getURLErr error
+	authURL   string
 }
 
 func (f *fakeSamlService) GetProviderByDomain(_ string) (samlprovider.ServiceProvider, error) {
@@ -240,6 +240,24 @@ func TestContinueWithLoginIdentifier_Execute_EmailGlobalAdopts(t *testing.T) {
 	assert.Equal(t, 1, p.users.adoptCalls)
 }
 
+// keep_users_global (archon#1085 task 16): the global email user is left global, resolved, and
+// routed on like any other user.
+func TestContinueWithLoginIdentifier_Execute_EmailGlobalKeptGlobal(t *testing.T) {
+	deps, p, _, _ := loginDeps()
+	deps.Cfg = loginIdentifierCfg()
+	deps.Cfg.MultiTenant.KeepUsersGlobal = true
+	p.emails.email = &models.Email{UserID: &userID, Address: "user@example.com"}
+	p.emails.isGlobal = true
+	p.users.user = userWithPrimaryEmail(userID, "user@example.com")
+
+	ctx := newLoginCtx(deps, map[string]interface{}{"identifier": "user@example.com"})
+
+	require.NoError(t, ContinueWithLoginIdentifier{}.Execute(ctx))
+	assert.Equal(t, 0, p.users.adoptCalls, "a kept-global user must not be adopted into the login tenant")
+	assert.Equal(t, shared.StateLoginMethodChooser, ctx.firstContinuedState())
+	assert.Equal(t, userID.String(), ctx.Stash().Get(shared.StashPathUserID).String())
+}
+
 func TestContinueWithLoginIdentifier_Execute_EmailLookupError(t *testing.T) {
 	deps, p, _, _ := loginDeps()
 	deps.Cfg = loginIdentifierCfg()
@@ -322,6 +340,23 @@ func TestContinueWithLoginIdentifier_Execute_UsernameGlobalAdopts(t *testing.T) 
 
 	require.NoError(t, ContinueWithLoginIdentifier{}.Execute(ctx))
 	assert.Equal(t, 1, p.users.adoptCalls)
+}
+
+// keep_users_global: the global username user is left global, resolved, and routed on.
+func TestContinueWithLoginIdentifier_Execute_UsernameGlobalKeptGlobal(t *testing.T) {
+	deps, p, _, _ := loginDeps()
+	deps.Cfg = loginIdentifierCfg()
+	deps.Cfg.MultiTenant.KeepUsersGlobal = true
+	p.usernames.username = &models.Username{UserId: userID, Username: "alice"}
+	p.usernames.isGlobal = true
+	p.users.user = &models.User{ID: userID}
+
+	ctx := newLoginCtx(deps, map[string]interface{}{"identifier": "alice"})
+
+	require.NoError(t, ContinueWithLoginIdentifier{}.Execute(ctx))
+	assert.Equal(t, 0, p.users.adoptCalls, "a kept-global user must not be adopted into the login tenant")
+	assert.Equal(t, shared.StateLoginPassword, ctx.firstContinuedState())
+	assert.Equal(t, userID.String(), ctx.Stash().Get(shared.StashPathUserID).String())
 }
 
 func TestContinueWithLoginIdentifier_Execute_UsernameLookupError(t *testing.T) {

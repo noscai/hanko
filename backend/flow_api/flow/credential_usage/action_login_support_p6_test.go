@@ -145,10 +145,12 @@ func (f *fakeLoginPersister) GetUserPersisterWithConnection(_ *pop.Connection) p
 
 type fakePasswordSvc struct {
 	services.Password
-	err error
+	err         error
+	verifiedFor uuid.UUID
 }
 
-func (f *fakePasswordSvc) VerifyPassword(_ *pop.Connection, _ uuid.UUID, _ string) error {
+func (f *fakePasswordSvc) VerifyPassword(_ *pop.Connection, userID uuid.UUID, _ string) error {
+	f.verifiedFor = userID
 	return f.err
 }
 
@@ -199,4 +201,75 @@ func userWithPrimaryEmail(id uuid.UUID, address string) *models.User {
 			},
 		},
 	}
+}
+
+// --- stateful tenant fakes: one user row seen from several tenants (archon#1085 6.2 #19) ---
+
+// tenantBoundUsers holds the one user row the stateful email fake reads. AdoptUserToTenant binds
+// it like the real conditional UPDATE (... WHERE tenant_id IS NULL).
+type tenantBoundUsers struct {
+	persistence.UserPersister
+	user       *models.User
+	adoptCalls int
+}
+
+func (f *tenantBoundUsers) Get(_ uuid.UUID) (*models.User, error) { return f.user, nil }
+
+func (f *tenantBoundUsers) AdoptUserToTenant(_ uuid.UUID, tenantID uuid.UUID) error {
+	f.adoptCalls++
+	if f.user.TenantID == nil {
+		t := tenantID
+		f.user.TenantID = &t
+	}
+	return nil
+}
+
+// tenantBoundEmails mirrors FindByAddressWithTenantFallback against that row: a global row matches
+// any tenant as the global fallback, a bound row matches only its own tenant, so once the user is
+// adopted the fallback stops matching for every other tenant.
+type tenantBoundEmails struct {
+	persistence.EmailPersister
+	users   *tenantBoundUsers
+	address string
+}
+
+func (f *tenantBoundEmails) FindByAddressWithTenantFallback(address string, tenantID *uuid.UUID) (*models.Email, bool, error) {
+	user := f.users.user
+	if address != f.address {
+		return nil, false, nil
+	}
+	email := &models.Email{UserID: &user.ID, Address: address, TenantID: user.TenantID}
+	switch {
+	case user.TenantID == nil:
+		return email, tenantID != nil, nil
+	case tenantID != nil && *user.TenantID == *tenantID:
+		return email, false, nil
+	default:
+		return nil, false, nil
+	}
+}
+
+type tenantBoundPersister struct {
+	persistence.Persister
+	emails *tenantBoundEmails
+	users  *tenantBoundUsers
+}
+
+func (f *tenantBoundPersister) GetEmailPersisterWithConnection(_ *pop.Connection) persistence.EmailPersister {
+	return f.emails
+}
+
+func (f *tenantBoundPersister) GetUserPersisterWithConnection(_ *pop.Connection) persistence.UserPersister {
+	return f.users
+}
+
+// withGlobalUser swaps deps' persister for the stateful fakes, seeded with one global user who owns
+// address, and returns the row so a test can watch its tenant.
+func withGlobalUser(deps *shared.Dependencies, address string) *tenantBoundUsers {
+	users := &tenantBoundUsers{user: &models.User{ID: userID}}
+	deps.Persister = &tenantBoundPersister{
+		emails: &tenantBoundEmails{users: users, address: address},
+		users:  users,
+	}
+	return users
 }
