@@ -72,6 +72,10 @@ func (a PreAuthenticatedContinue) Execute(c flowpilot.ExecutionContext) error {
 		return c.Error(flowpilot.ErrorFormDataInvalid.Wrap(err))
 	}
 
+	if err := shared.PinFlowTenantID(c.Stash(), serviceTokenFlowTenant(claims, deps.Cfg.MultiTenant)); err != nil {
+		return fmt.Errorf("failed to pin the flow tenant: %w", err)
+	}
+
 	_ = c.Stash().Set(shared.StashPathUserID, userModel.ID.String())
 	if primaryEmail := userModel.Emails.GetPrimary(); primaryEmail != nil {
 		_ = c.Stash().Set(shared.StashPathEmail, primaryEmail.Address)

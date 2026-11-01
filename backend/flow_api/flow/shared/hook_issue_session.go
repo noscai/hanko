@@ -40,6 +40,9 @@ func (h IssueSession) Execute(c flowpilot.HookExecutionContext) error {
 	userJWT := dto.UserJWTFromUserModel(userModel)
 
 	var jwtOpts []session.JWTOptions
+	if flowTenantID := FlowTenantID(c.Stash(), deps.TenantID); flowTenantID != nil {
+		jwtOpts = append(jwtOpts, session.WithFlowTenant(flowTenantID.String()))
+	}
 	if c.Stash().Get(StashPathAMRValues).Exists() {
 		var amr []string
 		for _, v := range c.Stash().Get(StashPathAMRValues).Array() {

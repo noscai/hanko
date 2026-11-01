@@ -26,8 +26,9 @@ import (
 // are adopted into the claimed tenant on first use, and the check above binds them from then on.
 // Under keep_users_global they are never adopted, so they are bound only by the signed claim and,
 // when the header is sent, by claim == X-Tenant-ID: a token naming any tenant is accepted for them.
-// Which clinics such a user belongs to is decided by clinic-os, which signs the claim; pinning the
-// flow tenant into their session is archon#1085 task 17.
+// Which clinics such a user belongs to is decided by clinic-os, which signs the claim, and the
+// flow is then pinned to the claimed tenant (serviceTokenFlowTenant), so its device trust and the
+// session it issues are that clinic's.
 func validateTenantBoundary(
 	claims *ServiceTokenClaims,
 	user *models.User,
@@ -94,6 +95,28 @@ func shouldAdoptGlobalUser(
 	}
 
 	return true, tenant
+}
+
+// serviceTokenFlowTenant returns the tenant a pre-authenticated flow runs under: the one the
+// service token names (archon#1085 Q18). Call it only with claims resolveServiceTokenUser has
+// accepted: by then the claim is a well-formed tenant equal to the request tenant when a header
+// was sent, and to the user's own tenant when they have one.
+//
+// It matters for a user kept global. They have no row tenant, and the admin app may send no
+// X-Tenant-ID, so without the pin the flow ran under no tenant: device trust from a legacy row
+// skipped the second factor, and the session named no clinic. Pinning to the claim also covers a
+// tenant-bound user's flow sent without the header, whose claim is their own tenant.
+func serviceTokenFlowTenant(claims *ServiceTokenClaims, cfg config.MultiTenant) *uuid.UUID {
+	if !cfg.Enabled {
+		return nil
+	}
+
+	tenant, err := uuid.FromString(claims.TenantID)
+	if err != nil {
+		return nil
+	}
+
+	return &tenant
 }
 
 // serviceTokenUserLookup is the slice of persistence resolveServiceTokenUser needs. Narrow by

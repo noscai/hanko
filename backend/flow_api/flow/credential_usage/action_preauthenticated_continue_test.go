@@ -259,6 +259,47 @@ func TestPreAuthenticatedContinue_Execute_AdoptsGlobalUser(t *testing.T) {
 	assert.Equal(t, 1, users.adoptCalls, "a global user must be adopted into the claimed tenant")
 }
 
+// archon#1085 6.2 #16. A user kept global has no row tenant, and the admin app may send no
+// X-Tenant-ID, so before this change their pre-authenticated flow ran under no tenant at all: its
+// device trust was matched as a legacy row and its session named no clinic. The flow must run
+// under the tenant the service token names, and a header sent on a later request of the same flow
+// must not move it.
+func TestPreAuthenticatedContinue_Execute_PinsKeptGlobalUserFlowToServiceTokenTenant(t *testing.T) {
+	deps, users := preAuthDeps(&models.User{ID: userID, TenantID: nil})
+	deps.TenantID = nil
+	deps.Cfg.MultiTenant.KeepUsersGlobal = true
+	token := mintToken(t, testSecret, testIssuer, userID.String(), tenantB.String(), time.Hour)
+	ctx := newPreAuthCtx(token, deps)
+
+	err := PreAuthenticatedContinue{}.Execute(ctx)
+
+	require.NoError(t, err)
+	require.True(t, ctx.continued, "a kept-global user with a valid service token must continue")
+	assert.Zero(t, users.adoptCalls, "a kept-global user must not be adopted")
+	assert.Equal(t, &tenantB, shared.FlowTenantID(ctx.Stash(), deps.TenantID),
+		"the flow must run under the service token's tenant")
+	assert.Equal(t, &tenantB, shared.FlowTenantID(ctx.Stash(), &tenantA),
+		"a later request's header must not move the flow to another tenant")
+}
+
+// The pin never widens the boundary (archon#1668): a service token for tenant B sent under tenant
+// A's header is still refused, and nothing is pinned for the refused flow.
+func TestPreAuthenticatedContinue_Execute_KeptGlobalUserRefusedUnderAnotherTenantsHeader(t *testing.T) {
+	deps, _ := preAuthDeps(&models.User{ID: userID, TenantID: nil})
+	deps.Cfg.MultiTenant.KeepUsersGlobal = true
+	token := mintToken(t, testSecret, testIssuer, userID.String(), tenantB.String(), time.Hour)
+	ctx := newPreAuthCtx(token, deps)
+
+	err := PreAuthenticatedContinue{}.Execute(ctx)
+
+	require.NoError(t, err)
+	assert.True(t, ctx.errored, "a token for another tenant than the request's must be refused")
+	assert.False(t, ctx.continued)
+	assert.False(t, ctx.Stash().Get(shared.StashPathFlowTenantID).Exists(),
+		"a refused flow must not be pinned to any tenant")
+	assert.False(t, ctx.Stash().Get(shared.StashPathUserID).Exists())
+}
+
 func TestPreAuthenticatedContinue_Metadata(t *testing.T) {
 	a := PreAuthenticatedContinue{}
 	assert.Equal(t, shared.ActionPreAuthenticatedContinue, a.GetName())
