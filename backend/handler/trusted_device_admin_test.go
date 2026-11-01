@@ -250,9 +250,9 @@ func (s *trustedDeviceAdminSuite) TestTrustedDeviceAdminHandler_Delete() {
 				Where("user_id = ?", trustedDeviceAdminUserWithDevices).
 				All(&ownRows))
 			if currentTest.userId == trustedDeviceAdminUserWithDevices {
-				s.Empty(ownRows)
+				s.Empty(ownRows, "the expired trust row goes too, not only the unexpired ones")
 			} else {
-				s.Len(ownRows, 2, "a request for another user must not touch this user's trusted devices")
+				s.Len(ownRows, 3, "a request for another user must not touch this user's trusted devices, expired or not")
 			}
 
 			var kept []models.TrustedDevice
