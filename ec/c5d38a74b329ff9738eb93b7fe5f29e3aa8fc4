@@ -1,0 +1,23 @@
+backend/flow_api/flow/device_trust/hook_issue_trust_device_cookie.go
+  s_72ae283317499b::t_79a53f0dc9d5ac 4,13,81-86
+backend/flow_api/flow/device_trust/hook_issue_trust_device_cookie_test.go
+  s_72ae283317499b::t_a1210b7a3651ec 690-706
+backend/persistence/trusted_device_persister.go
+  s_72ae283317499b::t_92a3b5afbff313 14-18,118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ecc5d38a74b329ff9738eb93b7fe5f29e3aa8fc4",
+  "prompts": {},
+  "sessions": {
+    "s_72ae283317499b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "219a2835-1bf2-4ccf-97e2-ab2fb90e92f2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}
