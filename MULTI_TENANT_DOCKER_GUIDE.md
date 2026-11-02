@@ -200,17 +200,43 @@ migration), and registration under an `X-Tenant-ID` header still creates a tenan
 
 **Device trust is per tenant.** A trusted browser (`trusted_devices`) records the tenant whose
 flow trusted it and skips the second factor only in that tenant's flows. A flow's tenant is fixed
-once the user is identified: a later request with another `X-Tenant-ID` does not move it. Rows
+when the credential step completes (or, for a pre-authenticated flow, when its service token is
+accepted): a later request with another `X-Tenant-ID` does not move it. A tenant-bound user's flow
+runs under their own tenant even without the header, the tenant their session names. Rows
 without a tenant answer only flows without one; the migration gives existing rows of tenant-bound
 users their user's tenant. The migration is additive, so pods of the previous image keep working
 during the rollout and after an image rollback.
 
+Per-tenant trust is not behind `keep_users_global`: it applies on every deployment running this
+version, with the flag off too. With the flag off it changes four things, none of them a weaker
+check:
+
+1. A global user's trust rows have no tenant, so they stop answering flows sent with
+   `X-Tenant-ID`. Each browser such a user trusted asks for the code once more, then is trusted
+   for that tenant. (A global user adopted to a tenant on login takes their trust rows along.)
+2. Rows written by a pod of the previous image during the rollout have no tenant, so a
+   tenant-bound user who trusted a browser in that window is asked for the code once more.
+   Re-run the migration's backfill once each cluster's rollout is complete and no old pod is
+   left:
+   `UPDATE trusted_devices SET tenant_id = users.tenant_id FROM users WHERE trusted_devices.user_id = users.id AND users.tenant_id IS NOT NULL AND trusted_devices.tenant_id IS NULL`.
+3. A tenant-bound user who alternated header-less and headered flows would have had their one
+   trust row moved between no tenant and their tenant, and been asked every time. Their flows
+   now always run under their own tenant, so this no longer happens.
+4. In paths that never adopt a user (passkey login, token exchange), a global user's session
+   now names the request's tenant where it named none.
+
 It ships in two steps. This version keeps the `(device_token, user_id)` unique index, so one browser
 holds one trust row per user and trust follows the clinic that trusted it last; while every user
 belongs to one tenant, nothing is lost. Before `keep_users_global` is turned on, and only once no pod
-of an older image is left, drop that index (ClinicOS: archon#1085 task 34):
-`DROP INDEX IF EXISTS trusted_devices_token_user_idx`. From then on one browser holds a separate
-trust per clinic, with no code change.
+of an older image is left, the index is dropped by a migration that ships with that change
+(ClinicOS: archon#1085 task 34), never by hand, so fresh databases and tests keep the clusters'
+schema. Its up is `DROP INDEX IF EXISTS trusted_devices_token_user_idx`; its down deletes all but
+the latest-expiring row of each `(device_token, user_id)` and recreates the unique index. From then
+on one browser holds a separate trust per clinic, with no code change.
+
+> **Rollback floor.** Once that migration has run, a Hanko image older than this version can no
+> longer be rolled back to: it upserts with `ON CONFLICT (device_token, user_id)`, which has no
+> arbiter without the index, so every trust write fails. Run the migration's down first.
 
 ### Verify Migration Success
 
