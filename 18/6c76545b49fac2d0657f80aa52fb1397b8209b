@@ -1,0 +1,21 @@
+backend/flow_api/flow/login/hook_schedule_onboarding_states.go
+  s_72ae283317499b::t_3f147422953529 29-33,52,61-81
+backend/flow_api/flow/login/hook_schedule_onboarding_states_test.go
+  s_72ae283317499b::t_e956d570dd3ce9 70-82,86-90,153,196-240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "186c76545b49fac2d0657f80aa52fb1397b8209b",
+  "prompts": {},
+  "sessions": {
+    "s_72ae283317499b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "219a2835-1bf2-4ccf-97e2-ab2fb90e92f2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}
