@@ -1,11 +1,14 @@
 package config
 
 import (
+	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/invopop/jsonschema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/xeipuuv/gojsonschema"
 )
 
 // keep_users_global leaves users global; allow_global_users=false refuses global users on the
@@ -66,18 +69,49 @@ func TestKeepUsersGlobalFromEnvironment(t *testing.T) {
 	assert.True(t, cfg.MultiTenant.KeepUsersGlobal)
 }
 
+// The checked-in schema (json_schema/hanko.config.json, what editors and CI validate configs
+// against) must refuse keep_users_global without allow_global_users, as Validate does, and its
+// rule must be the one JSONSchemaExtend generates, so a regeneration cannot silently drop it.
 func TestMultiTenant_JSONSchemaRequiresGlobalUsersWhenKeepingUsersGlobal(t *testing.T) {
-	schema := &jsonschema.Schema{}
+	raw, err := os.ReadFile("../json_schema/hanko.config.json")
+	require.NoError(t, err)
+	var checkedIn struct {
+		Defs map[string]json.RawMessage `json:"$defs"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &checkedIn))
+	multiTenant, ok := checkedIn.Defs["MultiTenant"]
+	require.True(t, ok, "the checked-in schema must define MultiTenant")
 
-	MultiTenant{}.JSONSchemaExtend(schema)
+	schema, err := gojsonschema.NewSchema(gojsonschema.NewBytesLoader(multiTenant))
+	require.NoError(t, err)
 
-	require.NotNil(t, schema.If)
-	require.NotNil(t, schema.Then)
-	assert.Equal(t, []string{"keep_users_global"}, schema.If.Required)
-	keep, ok := schema.If.Properties.Get("keep_users_global")
-	require.True(t, ok)
-	assert.Equal(t, true, keep.Const)
-	allow, ok := schema.Then.Properties.Get("allow_global_users")
-	require.True(t, ok)
-	assert.Equal(t, true, allow.Const)
+	for name, tc := range map[string]struct {
+		doc   string
+		valid bool
+	}{
+		"keep without global users is refused":           {`{"keep_users_global": true, "allow_global_users": false}`, false},
+		"keep with global users is accepted":             {`{"keep_users_global": true, "allow_global_users": true}`, true},
+		"no keep without global users is accepted":       {`{"keep_users_global": false, "allow_global_users": false}`, true},
+		"keep with the default global users is accepted": {`{"keep_users_global": true}`, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			result, err := schema.Validate(gojsonschema.NewStringLoader(tc.doc))
+			require.NoError(t, err)
+			assert.Equal(t, tc.valid, result.Valid(), "%v", result.Errors())
+		})
+	}
+
+	generated := &jsonschema.Schema{}
+	MultiTenant{}.JSONSchemaExtend(generated)
+	var checkedInRule struct {
+		If   json.RawMessage `json:"if"`
+		Then json.RawMessage `json:"then"`
+	}
+	require.NoError(t, json.Unmarshal(multiTenant, &checkedInRule))
+	generatedIf, err := json.Marshal(generated.If)
+	require.NoError(t, err)
+	generatedThen, err := json.Marshal(generated.Then)
+	require.NoError(t, err)
+	assert.JSONEq(t, string(generatedIf), string(checkedInRule.If), "the checked-in if must be the generated one")
+	assert.JSONEq(t, string(generatedThen), string(checkedInRule.Then), "the checked-in then must be the generated one")
 }
