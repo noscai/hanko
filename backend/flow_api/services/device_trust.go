@@ -96,8 +96,18 @@ func (s DeviceTrustService) CreateTrustedDevice(userID uuid.UUID, deviceToken st
 //
 // Fails closed at branch granularity: a persister error is a false for that branch only, never a
 // true and never a panic.
+//
+// Under multi_tenant.keep_users_global a flow with no tenant is never trusted. A kept-global user
+// can run a whole login without X-Tenant-ID, and their pre-migration rows carry no tenant, so
+// tenantless trust would skip the factor and leave per-clinic trust to whichever relying party
+// insists on the session's tenant claim. A tenant-bound user's login pins their own tenant, so
+// only a global user reaches this with no tenant.
 func (s DeviceTrustService) CheckDeviceTrust(userID uuid.UUID) bool {
 	if userID.IsNil() || s.Cfg.MFA.DeviceTrustPolicy == "never" {
+		return false
+	}
+
+	if s.TenantID == nil && s.Cfg.MultiTenant.KeepUsersGlobal {
 		return false
 	}
 

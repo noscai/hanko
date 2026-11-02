@@ -193,7 +193,10 @@ migration), and registration under an `X-Tenant-ID` header still creates a tenan
 >    un-adopted (`tenant_id = NULL` on the user and related rows). That data step can't be undone
 >    by turning the flag off again, and it can collide with the global unique email index. Run it
 >    from a reviewed runbook, after a verified database snapshot, with before/after counts
->    (ClinicOS: archon#1085 task 34).
+>    (ClinicOS: archon#1085 task 34). It leaves `trusted_devices.tenant_id` untouched: each trust
+>    row keeps the clinic that trusted it, and setting it to `NULL` would turn every clinic's trust
+>    into tenantless trust. It deletes the un-adopted users' trust rows that have no tenant instead
+>    of creating new ones. With the flag on, a flow without a tenant never skips the second factor.
 
 **Device trust is per tenant.** A trusted browser (`trusted_devices`) records the tenant whose
 flow trusted it and skips the second factor only in that tenant's flows. A flow's tenant is fixed

@@ -783,3 +783,30 @@ func TestParseDeviceIDCookie(t *testing.T) {
 		})
 	}
 }
+
+// Under keep_users_global a kept-global user can run a whole login without X-Tenant-ID, and their
+// legacy trust rows carry no tenant. Trust must not skip the second factor there: per-clinic trust
+// would otherwise hold only at relying parties that insist on the session's tenant claim. A
+// tenant-bound user never reaches this with no tenant: the login pins their own tenant. With the
+// flag off, the tenantless flow keeps its legacy trust.
+func TestCheckDeviceTrust_KeptGlobalUsersTenantlessFlowIsNeverTrusted(t *testing.T) {
+	user := uuid.Must(uuid.NewV4())
+	tok := randToken(t)
+	cookie := deviceTokenPrefix + tok
+
+	p := newFakePersister()
+	p.store(user, tok, time.Now().Add(time.Hour).UTC())
+
+	kept := newServiceUnderTenant(t, p, cookie, nil)
+	kept.Cfg.MultiTenant.KeepUsersGlobal = true
+	assert.False(t, kept.CheckDeviceTrust(user), "flag on: a tenantless flow always asks for the second factor")
+
+	off := newServiceUnderTenant(t, p, cookie, nil)
+	off.Cfg.MultiTenant.KeepUsersGlobal = false
+	assert.True(t, off.CheckDeviceTrust(user), "flag off: a tenantless flow keeps its legacy trust")
+
+	underTenant := newServiceUnderTenant(t, p, cookie, &trustTenantA)
+	underTenant.Cfg.MultiTenant.KeepUsersGlobal = true
+	require.NoError(t, underTenant.CreateTrustedDevice(user, tok))
+	assert.True(t, underTenant.CheckDeviceTrust(user), "flag on: a flow under a tenant is answered by that tenant's trust")
+}
