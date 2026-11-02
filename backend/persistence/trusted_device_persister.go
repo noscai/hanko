@@ -74,8 +74,8 @@ func (p *trustedDevicePersister) Create(trustedDevice models.TrustedDevice) erro
 	return upsertTrustedDevice(sqlTrustWriter{db: p.db}, trustedDevice)
 }
 
-// trustWriter is the three statements Create is built from, so the order they run in can be
-// tested without a database.
+// trustWriter is the three statements Create is built from, so the rows Create leaves under each
+// index shape (with and without the pair index) can be tested without a database.
 type trustWriter interface {
 	// refresh moves expires_at of the row holding this trust: same device_token, user and tenant
 	// (both NULL counting as the same).

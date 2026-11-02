@@ -13,10 +13,12 @@ import (
 	"github.com/teamhanko/hanko/backend/v2/persistence/models"
 )
 
-// These tests cover the order in which TrustedDevicePersister.Create runs its three statements
-// (upsertTrustedDevice), against an in-memory table that applies the same unique indexes Postgres
-// does: no database. Whether each statement's SQL does what its name says is covered against
-// Postgres in trusted_device_persister_integration_test.go.
+// These tests cover which rows TrustedDevicePersister.Create leaves (upsertTrustedDevice) under
+// each index shape, against an in-memory table that applies the same unique indexes Postgres
+// does: no database. They assert the resulting rows, never which statements ran, so a correct
+// rewrite of the upsert keeps them green. Whether each statement's SQL does what its name says,
+// and a concurrent trust of the same tenant, are covered against Postgres in
+// trusted_device_persister_integration_test.go.
 //
 // The table is modelled in both shapes Create must serve without a code change: with
 // trusted_devices_token_user_idx on (device_token, user_id) still in place, as this release ships,
@@ -34,10 +36,7 @@ type fakeTrustTable struct {
 	rows []models.TrustedDevice
 	// pairIndex models trusted_devices_token_user_idx: one row per (device_token, user_id).
 	pairIndex bool
-	// concurrent is a row another transaction commits just before this one inserts.
-	concurrent *models.TrustedDevice
-	failOn     string
-	calls      []string
+	failOn    string
 }
 
 func (f *fakeTrustTable) samePair(row, td models.TrustedDevice) bool {
@@ -45,7 +44,6 @@ func (f *fakeTrustTable) samePair(row, td models.TrustedDevice) bool {
 }
 
 func (f *fakeTrustTable) refresh(td models.TrustedDevice) (int, error) {
-	f.calls = append(f.calls, "refresh")
 	if f.failOn == "refresh" {
 		return 0, errors.New("refresh failed")
 	}
@@ -61,13 +59,8 @@ func (f *fakeTrustTable) refresh(td models.TrustedDevice) (int, error) {
 }
 
 func (f *fakeTrustTable) insertIfAbsent(td models.TrustedDevice) (int, error) {
-	f.calls = append(f.calls, "insert")
 	if f.failOn == "insert" {
 		return 0, errors.New("insert failed")
-	}
-	if f.concurrent != nil {
-		f.rows = append(f.rows, *f.concurrent)
-		f.concurrent = nil
 	}
 	for _, row := range f.rows {
 		// The per-tenant partial indexes key (device_token, user_id, tenant_id), NULL tenants
@@ -81,7 +74,9 @@ func (f *fakeTrustTable) insertIfAbsent(td models.TrustedDevice) (int, error) {
 }
 
 func (f *fakeTrustTable) moveToTenant(td models.TrustedDevice) (int, error) {
-	f.calls = append(f.calls, "move")
+	if f.failOn == "move" {
+		return 0, errors.New("move failed")
+	}
 	latest := -1
 	for i := range f.rows {
 		if f.samePair(f.rows[i], td) && (latest < 0 || f.rows[i].ExpiresAt.After(f.rows[latest].ExpiresAt)) {
@@ -116,7 +111,6 @@ func TestUpsertTrustedDevice_FirstTrustInserts(t *testing.T) {
 
 	require.Len(t, table.rows, 1)
 	assert.Equal(t, &upsertTenantA, table.rows[0].TenantID)
-	assert.Equal(t, []string{"refresh", "insert"}, table.calls)
 }
 
 func TestUpsertTrustedDevice_ReTrustUnderTheSameTenantRefreshesTheRow(t *testing.T) {
@@ -129,7 +123,6 @@ func TestUpsertTrustedDevice_ReTrustUnderTheSameTenantRefreshesTheRow(t *testing
 		require.Len(t, table.rows, 1)
 		assert.Equal(t, existing.ID, table.rows[0].ID, "the row is refreshed in place, not replaced")
 		assert.Equal(t, upsertNow.Add(7*time.Hour), table.rows[0].ExpiresAt)
-		assert.Equal(t, []string{"refresh"}, table.calls)
 	}
 }
 
@@ -158,7 +151,6 @@ func TestUpsertTrustedDevice_WhileThePairIndexStandsTrustFollowsTheLatestTenant(
 			assert.Equal(t, existing.ID, table.rows[0].ID)
 			assert.Equal(t, tc.wantTo, table.rows[0].TenantID, "trust must follow the latest tenant")
 			assert.Equal(t, upsertNow.Add(7*time.Hour), table.rows[0].ExpiresAt)
-			assert.Equal(t, []string{"refresh", "insert", "refresh", "move"}, table.calls)
 		})
 	}
 }
@@ -173,32 +165,36 @@ func TestUpsertTrustedDevice_WithoutThePairIndexTenantsCoexist(t *testing.T) {
 	require.Len(t, table.rows, 2)
 	assert.Equal(t, existing, table.rows[0], "A's trust must be left alone")
 	assert.Equal(t, &upsertTenantB, table.rows[1].TenantID)
-	assert.Equal(t, []string{"refresh", "insert"}, table.calls)
 }
 
-// Two logins of the same user on the same browser and tenant race: the other one inserts first.
-// Ours must refresh that row, and must not touch another tenant's row of the same browser.
-func TestUpsertTrustedDevice_ConcurrentTrustOfTheSameTenantIsRefreshed(t *testing.T) {
-	other := trustRow(&upsertTenantB, 9*time.Hour)
-	racer := trustRow(&upsertTenantA, time.Hour)
-	table := &fakeTrustTable{pairIndex: false, rows: []models.TrustedDevice{other}, concurrent: &racer}
+// A failed statement fails the write and leaves the table as it was. "move" is reached only when
+// the browser already holds this user's trust under another tenant, so that case starts from one.
+func TestUpsertTrustedDevice_AFailedStatementFailsTheWriteAndChangesNothing(t *testing.T) {
+	for _, step := range []string{"refresh", "insert", "move"} {
+		t.Run(step, func(t *testing.T) {
+			existing := trustRow(&upsertTenantB, time.Hour)
+			table := &fakeTrustTable{pairIndex: true, failOn: step, rows: []models.TrustedDevice{existing}}
 
-	require.NoError(t, upsertTrustedDevice(table, trustRow(&upsertTenantA, 7*time.Hour)))
+			err := upsertTrustedDevice(table, trustRow(&upsertTenantA, 7*time.Hour))
 
-	require.Len(t, table.rows, 2)
-	assert.Equal(t, other, table.rows[0], "another tenant's trust must be left alone")
-	assert.Equal(t, racer.ID, table.rows[1].ID)
-	assert.Equal(t, upsertNow.Add(7*time.Hour), table.rows[1].ExpiresAt)
-	assert.Equal(t, []string{"refresh", "insert", "refresh"}, table.calls)
-}
-
-func TestUpsertTrustedDevice_StopsAtTheFirstFailure(t *testing.T) {
-	for _, step := range []string{"refresh", "insert"} {
-		table := &fakeTrustTable{pairIndex: true, failOn: step}
-
-		err := upsertTrustedDevice(table, trustRow(&upsertTenantA, time.Hour))
-
-		require.Error(t, err)
-		assert.Equal(t, step, table.calls[len(table.calls)-1], "no statement may run after a failed one")
+			require.Error(t, err)
+			assert.Equal(t, []models.TrustedDevice{existing}, table.rows)
+		})
 	}
 }
+
+// Nothing to refresh, insert or move: the write reports ErrTrustedDeviceNotWritten, which the
+// login hook tells apart from a failed statement.
+func TestUpsertTrustedDevice_NoRowWrittenIsErrTrustedDeviceNotWritten(t *testing.T) {
+	err := upsertTrustedDevice(noopTrustWriter{}, trustRow(&upsertTenantA, time.Hour))
+
+	require.ErrorIs(t, err, ErrTrustedDeviceNotWritten)
+}
+
+// noopTrustWriter is a table whose conflicting row is deleted between the statements: every
+// statement writes nothing.
+type noopTrustWriter struct{}
+
+func (noopTrustWriter) refresh(models.TrustedDevice) (int, error)        { return 0, nil }
+func (noopTrustWriter) insertIfAbsent(models.TrustedDevice) (int, error) { return 0, nil }
+func (noopTrustWriter) moveToTenant(models.TrustedDevice) (int, error)   { return 0, nil }

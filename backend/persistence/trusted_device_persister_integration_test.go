@@ -15,6 +15,7 @@ import (
 
 	"github.com/gofrs/uuid"
 	"github.com/stretchr/testify/suite"
+	"github.com/teamhanko/hanko/backend/v2/persistence"
 	"github.com/teamhanko/hanko/backend/v2/persistence/models"
 	"github.com/teamhanko/hanko/backend/v2/test"
 )
@@ -627,6 +628,60 @@ func (s *trustedDevicePersisterSuite) TestAdoptUserToTenant_MovesTheUsersTrustWi
 	found, err = persister.FindValidTrust(token, other, nil, now)
 	s.Require().NoError(err)
 	s.NotNil(found, "another user's trust on the same browser must stay without a tenant")
+}
+
+// Two logins of the same user on the same browser and tenant race. The first holds its new row
+// uncommitted while the second writes: the second's insert waits on the unique index, finds the
+// row once the first commits, and must refresh it rather than fail or add a second row. Whether the
+// second write reaches its insert before the commit depends on scheduling; the end state asserted
+// is the same either way.
+func (s *trustedDevicePersisterSuite) TestCreate_ConcurrentTrustOfTheSameTenantIsRefreshed() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	userID := uuid.FromStringOrNil(fixtureUserID)
+	token := strings.Repeat("r", 64)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	row := func(expiresIn time.Duration) models.TrustedDevice {
+		return models.TrustedDevice{
+			ID:          s.mustNewUUID(),
+			UserID:      userID,
+			TenantID:    &trustTenantA,
+			DeviceToken: token,
+			ExpiresAt:   now.Add(expiresIn),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}
+	}
+
+	first, err := s.Storage.GetConnection().NewTransaction()
+	s.Require().NoError(err)
+	second, err := s.Storage.GetConnection().NewTransaction()
+	s.Require().NoError(err)
+
+	firstRow := row(time.Hour)
+	s.Require().NoError(persistence.NewTrustedDevicePersister(first).Create(firstRow))
+
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- persistence.NewTrustedDevicePersister(second).Create(row(7 * time.Hour))
+	}()
+	time.Sleep(200 * time.Millisecond)
+	s.Require().NoError(first.TX.Commit())
+
+	s.Require().NoError(<-secondDone, "the second login must refresh the row, not fail")
+	s.Require().NoError(second.TX.Commit())
+
+	var rows []models.TrustedDevice
+	s.Require().NoError(s.Storage.GetConnection().
+		Where("device_token = ? AND user_id = ?", token, userID).
+		All(&rows))
+	s.Require().Len(rows, 1, "the race must leave one row")
+	s.Equal(firstRow.ID, rows[0].ID)
+	s.Require().NotNil(rows[0].TenantID)
+	s.Equal(trustTenantA, *rows[0].TenantID)
+	s.WithinDuration(now.Add(7*time.Hour), rows[0].ExpiresAt, time.Millisecond, "the later login's expiry must win")
 }
 
 func (s *trustedDevicePersisterSuite) mustNewUUID() uuid.UUID {
