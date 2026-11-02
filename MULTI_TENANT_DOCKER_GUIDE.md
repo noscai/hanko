@@ -196,13 +196,18 @@ migration), and registration under an `X-Tenant-ID` header still creates a tenan
 >    (ClinicOS: archon#1085 task 34).
 
 **Device trust is per tenant.** A trusted browser (`trusted_devices`) records the tenant whose
-flow trusted it and skips the second factor only in that tenant's flows, so one identity holds a
-separate trust per clinic on the same browser. A flow's tenant is fixed once the user is
-identified: a later request with another `X-Tenant-ID` does not move it. Rows without a tenant
-answer only flows without one; the migration gives existing rows of tenant-bound users their
-user's tenant. Until every pod runs the new image, logins on old pods that end by trusting the
-browser fail at that step (a retry succeeds), so roll it out quickly. Rolling back needs that
-migration run down together with the image revert.
+flow trusted it and skips the second factor only in that tenant's flows. A flow's tenant is fixed
+once the user is identified: a later request with another `X-Tenant-ID` does not move it. Rows
+without a tenant answer only flows without one; the migration gives existing rows of tenant-bound
+users their user's tenant. The migration is additive, so pods of the previous image keep working
+during the rollout and after an image rollback.
+
+It ships in two steps. This version keeps the `(device_token, user_id)` unique index, so one browser
+holds one trust row per user and trust follows the clinic that trusted it last; while every user
+belongs to one tenant, nothing is lost. Before `keep_users_global` is turned on, and only once no pod
+of an older image is left, drop that index (ClinicOS: archon#1085 task 34):
+`DROP INDEX IF EXISTS trusted_devices_token_user_idx`. From then on one browser holds a separate
+trust per clinic, with no code change.
 
 ### Verify Migration Success
 

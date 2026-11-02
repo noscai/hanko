@@ -604,8 +604,10 @@ func TestCheckDeviceTrust_TrustUnderOneTenantDoesNotSkipAnothersSecondFactor(t *
 		"trust recorded under A must not skip a flow that runs without a tenant")
 }
 
-// The same browser holds the same person's trust for two clinics side by side: trusting it for B
-// must not take A's trust away.
+// Once archon#1085 task 34 drops trusted_devices_token_user_idx, the same browser holds the same
+// person's trust for two clinics side by side, and each tenant is answered from its own row. Which
+// rows the write keeps under each index shape is the persister's (TestUpsertTrustedDevice_*); this
+// fake keeps every row it is given, the shape after task 34.
 func TestCheckDeviceTrust_OneBrowserHoldsTrustForTwoTenants(t *testing.T) {
 	user := uuid.Must(uuid.NewV4())
 	tok := randToken(t)

@@ -2,35 +2,31 @@ add_column("trusted_devices", "tenant_id", "uuid", {"null": true})
 sql("UPDATE trusted_devices SET tenant_id = users.tenant_id FROM users WHERE trusted_devices.user_id = users.id AND users.tenant_id IS NOT NULL")
 sql("CREATE UNIQUE INDEX trusted_devices_token_user_tenant_idx ON trusted_devices (device_token, user_id, tenant_id) WHERE tenant_id IS NOT NULL")
 sql("CREATE UNIQUE INDEX trusted_devices_token_user_global_idx ON trusted_devices (device_token, user_id) WHERE tenant_id IS NULL")
-sql("DROP INDEX IF EXISTS trusted_devices_token_user_idx")
-# Device trust per clinic (archon#1085 Q15). One Hanko user now signs in to every clinic they belong
-# to, so a trust row records the tenant whose flow created it and answers only that tenant's flows;
-# a NULL row answers only flows that run without a tenant.
+# Device trust per clinic (archon#1085 Q15). One Hanko user will sign in to every clinic they
+# belong to, so a trust row records the tenant whose flow created it and answers only that
+# tenant's flows; a NULL row answers only flows that run without a tenant.
 #
 # The UPDATE gives every existing row of a tenant-bound user that user's tenant. Such a user can only
 # be signed in under their own tenant (or with no header at all), so the row was created for that
 # clinic; without it every trusted browser would be asked for a code once after deploy, because
 # login flows send X-Tenant-ID and a NULL row no longer answers them. Rows of global users stay NULL.
 #
-# The unique key moves from (device_token, user_id) to (device_token, user_id, tenant_id), so one
-# browser can hold the same person's trust for two clinics side by side. Postgres treats NULLs as
-# distinct, so it is two partial indexes, the shape of emails_address_tenant_idx /
-# emails_address_global_idx. Neither can fail on existing data: the dropped index already made
-# (device_token, user_id) unique, and the UPDATE gives all of one user's rows the same tenant.
+# ADDITIVE ON PURPOSE. trusted_devices_token_user_idx on (device_token, user_id) stays: the previous
+# image upserts with ON CONFLICT (device_token, user_id), which only that index can arbitrate, and it
+# keeps serving while the rollout runs (and again after an image rollback). The new image names no
+# conflict target (TrustedDevicePersister.Create), so it works with this index and without it. While
+# it stands, one browser holds one trust row per user and trust follows the clinic that trusted it
+# last; before keep_users_global is on (task 34) every user belongs to one tenant, so nothing is lost.
+#
+# The two partial indexes are the key once task 34 drops trusted_devices_token_user_idx, so one
+# browser can then hold the same person's trust for two clinics side by side. Postgres treats NULLs
+# as distinct, hence two, the shape of emails_address_tenant_idx / emails_address_global_idx. While
+# the pair index stands they are implied by it, so they can neither fail on existing data nor refuse
+# a write it allows.
 #
 # No foreign key to tenants: a pre-authenticated flow sent without X-Tenant-ID is pinned to the
 # tenant its service token names, which the tenant middleware never looked up, so that tenant need
 # not exist in this database.
-#
-# ROLLBACK NEEDS THE DOWN MIGRATION. The previous image upserts with ON CONFLICT (device_token,
-# user_id), which only the dropped index can arbitrate; against this schema every trust write of the
-# previous image fails. Revert the image and run this migration down together.
-#
-# The same holds during the rollout: from the moment this runs (in the first new pod's
-# initContainer) until the last pod of the previous image is gone, a login served by an old pod that
-# ends by trusting the browser fails at that step, and succeeds when retried on a new pod. Trust
-# reads on old pods keep working. Keeping the old index instead would forbid the second clinic's row
-# for the same browser and user, which is what this migration is for.
 #
 # Comments must stay BELOW the sql() calls: .fizz is run through plush.RunScript, and a leading
 # comment corrupts the token stream ("no prefix parse function for ) found").

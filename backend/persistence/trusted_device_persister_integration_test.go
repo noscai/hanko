@@ -8,6 +8,7 @@ package persistence_test
 // "persistence_test" package, that constant is reused here rather than redeclared.
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -433,17 +434,63 @@ func (s *trustedDevicePersisterSuite) TestFindValidTrust_LegacyRowAnswersOnlyAFl
 	s.Nil(found, "a legacy row must not answer a clinic's flow")
 }
 
-// One browser holds the same person's trust for two clinics and for a flow without a tenant, one
-// row each, and re-trusting under one of them refreshes that row only. This is what the partial
-// unique indexes of 20261101235835 are for: on the old (device_token, user_id) index the second
-// Create would have overwritten the first clinic's row.
-func (s *trustedDevicePersisterSuite) TestCreate_OneBrowserHoldsTrustPerTenant() {
+// While trusted_devices_token_user_idx stands (until archon#1085 task 34 drops it), one browser
+// holds one trust row per user: trusting it under another tenant, or without one, moves that row
+// and keeps its id, so trust follows the flow that trusted last.
+func (s *trustedDevicePersisterSuite) TestCreate_WhileThePairIndexStandsTrustFollowsTheLatestTenant() {
 	if testing.Short() {
 		s.T().Skip("skipping test in short mode.")
 	}
 
 	userID := uuid.FromStringOrNil(fixtureUserID)
 	token := strings.Repeat("n", 64)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	persister := s.Storage.GetTrustedDevicePersister()
+	var firstID uuid.UUID
+	for i, tenantID := range []*uuid.UUID{&trustTenantA, &trustTenantB, nil} {
+		id := s.mustNewUUID()
+		if i == 0 {
+			firstID = id
+		}
+		expiresAt := now.Add(time.Duration(i+1) * time.Hour)
+		s.Require().NoError(persister.Create(models.TrustedDevice{
+			ID:          id,
+			UserID:      userID,
+			TenantID:    tenantID,
+			DeviceToken: token,
+			ExpiresAt:   expiresAt,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}))
+
+		var rows []models.TrustedDevice
+		s.Require().NoError(s.Storage.GetConnection().
+			Where("device_token = ? AND user_id = ?", token, userID).
+			All(&rows))
+		s.Require().Len(rows, 1, "the pair index allows one row per browser and user")
+		s.Equal(firstID, rows[0].ID, "the row is moved, not replaced")
+		s.Equal(tenantID, rows[0].TenantID, "trust must follow the latest tenant")
+		s.WithinDuration(expiresAt, rows[0].ExpiresAt, time.Millisecond)
+	}
+
+	found, err := persister.FindValidTrust(token, userID, &trustTenantA, now)
+	s.Require().NoError(err)
+	s.Nil(found, "trust moved away from A must no longer answer A")
+}
+
+// The same Create after task 34 drops trusted_devices_token_user_idx: one browser holds the same
+// person's trust for two clinics and for a flow without a tenant, one row each, and re-trusting
+// under one of them refreshes that row only. Dropping the index here is task 34's step, run early.
+func (s *trustedDevicePersisterSuite) TestCreate_WithoutThePairIndexOneBrowserHoldsTrustPerTenant() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	s.Require().NoError(s.Storage.GetConnection().RawQuery("DROP INDEX trusted_devices_token_user_idx").Exec())
+
+	userID := uuid.FromStringOrNil(fixtureUserID)
+	token := strings.Repeat("p", 64)
 	now := time.Now().UTC().Truncate(time.Millisecond)
 
 	persister := s.Storage.GetTrustedDevicePersister()
@@ -487,6 +534,35 @@ func (s *trustedDevicePersisterSuite) TestCreate_OneBrowserHoldsTrustPerTenant()
 	s.WithinDuration(now.Add(5*time.Hour), foundNone.ExpiresAt, time.Second, "re-trusting without a tenant refreshes that row")
 }
 
+// Rollout and rollback safety: the previous image upserts with ON CONFLICT (device_token, user_id)
+// and keeps serving against this schema, so that statement must still find its arbiter.
+func (s *trustedDevicePersisterSuite) TestSchema_PreviousImageUpsertStillHasItsArbiter() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	userID := uuid.FromStringOrNil(fixtureUserID)
+	token := strings.Repeat("q", 64)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	previousImageUpsert := func(expiresAt time.Time) error {
+		return s.Storage.GetConnection().RawQuery(
+			`INSERT INTO trusted_devices (id, user_id, device_token, expires_at, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?)
+			 ON CONFLICT (device_token, user_id)
+			 DO UPDATE SET expires_at = EXCLUDED.expires_at, updated_at = EXCLUDED.updated_at`,
+			s.mustNewUUID(), userID, token, expiresAt, now, now,
+		).Exec()
+	}
+
+	s.Require().NoError(previousImageUpsert(now.Add(1 * time.Hour)))
+	s.Require().NoError(previousImageUpsert(now.Add(2*time.Hour)), "a re-trust by the previous image must upsert, not fail")
+
+	count, err := s.Storage.GetConnection().Where("device_token = ? AND user_id = ?", token, userID).Count(&models.TrustedDevice{})
+	s.Require().NoError(err)
+	s.Equal(1, count)
+}
+
 // The admin 2FA reset deletes the person's trust in every clinic, not only one tenant's.
 func (s *trustedDevicePersisterSuite) TestDeleteByUserID_RemovesRowsUnderEveryTenant() {
 	if testing.Short() {
@@ -498,12 +574,14 @@ func (s *trustedDevicePersisterSuite) TestDeleteByUserID_RemovesRowsUnderEveryTe
 	now := time.Now().UTC().Truncate(time.Millisecond)
 
 	persister := s.Storage.GetTrustedDevicePersister()
-	for _, tenantID := range []*uuid.UUID{&trustTenantA, &trustTenantB, nil} {
+	for i, tenantID := range []*uuid.UUID{&trustTenantA, &trustTenantB, nil} {
+		// One browser per tenant: while trusted_devices_token_user_idx stands, a second tenant on
+		// the same browser would move the row rather than add one.
 		s.Require().NoError(persister.Create(models.TrustedDevice{
 			ID:          s.mustNewUUID(),
 			UserID:      userID,
 			TenantID:    tenantID,
-			DeviceToken: token,
+			DeviceToken: token + strconv.Itoa(i),
 			ExpiresAt:   now.Add(1 * time.Hour),
 			CreatedAt:   now,
 			UpdatedAt:   now,

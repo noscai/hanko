@@ -1,15 +1,10 @@
-sql("DELETE FROM trusted_devices WHERE id IN (SELECT id FROM (SELECT id, row_number() OVER (PARTITION BY device_token, user_id ORDER BY expires_at DESC NULLS LAST, id DESC) AS rn FROM trusted_devices) t WHERE t.rn > 1)")
-sql("CREATE UNIQUE INDEX trusted_devices_token_user_idx ON trusted_devices (device_token, user_id)")
 sql("DROP INDEX IF EXISTS trusted_devices_token_user_global_idx")
 sql("DROP INDEX IF EXISTS trusted_devices_token_user_tenant_idx")
 drop_column("trusted_devices", "tenant_id")
-# Restores trusted_devices_token_user_idx, the ON CONFLICT arbiter of the previous image. A browser
-# may now hold one person's trust for several clinics, one row each; the DELETE keeps one row per
-# (device_token, user_id), the latest expires_at with id DESC to break ties (the dedupe of
-# 20260828085758), so the index cannot fail on data. The dropped rows cost that person one extra
-# 2FA code in the other clinic; the kept row answers every clinic again, the behaviour before trust
-# was scoped.
+# trusted_devices_token_user_idx was never dropped by the up migration, so there is nothing to
+# restore: the previous image's ON CONFLICT (device_token, user_id) keeps its arbiter throughout.
+# The rows keep their (device_token, user_id) and lose only the tenant, which makes every row answer
+# every tenant again -- the behaviour before trust was scoped.
 #
-# Run it together with reverting the image: the current image writes and reads tenant_id, so
-# against the down schema every trust check fails closed (a code is asked for) and every trust
-# write fails.
+# Task 34 drops trusted_devices_token_user_idx in a later migration; its down must deduplicate and
+# recreate the index before this one runs.

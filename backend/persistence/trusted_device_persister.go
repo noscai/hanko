@@ -35,39 +35,28 @@ func NewTrustedDevicePersister(db *pop.Connection) TrustedDevicePersister {
 	return &trustedDevicePersister{db: db}
 }
 
-// Create upserts on (device_token, user_id, tenant_id). A device_token is now shared by every
-// user who has trusted that browser, so re-trusting the same (device_token, user_id) pair on
-// login must refresh the existing row's expires_at rather than insert a second row for the same
-// pair: a plain INSERT would violate the unique index on re-trust, and a SELECT-then-decide
-// would race two concurrent re-trusts of the same pair into two INSERTs. ON CONFLICT resolves
-// both by constraint instead of by luck.
+// Create records trust for (device_token, user_id) under the row's tenant: it refreshes the row
+// that already holds it, or inserts one. A device_token is shared by every user who has trusted
+// that browser, so re-trusting must refresh the existing row's expires_at rather than pile up a
+// second row for it.
 //
-// The tenant is part of the key because trust is per clinic (archon#1085 Q15): the same person
-// on the same browser holds one row per clinic they trusted it for, and trusting it for clinic B
-// must not take clinic A's trust away. Postgres treats NULLs as distinct in a unique index, so the
-// key is two partial indexes (20261101235835_add_trusted_devices_tenant_id), the same shape as
-// emails_address_tenant_idx / emails_address_global_idx: trusted_devices_token_user_tenant_idx on
-// (device_token, user_id, tenant_id) WHERE tenant_id IS NOT NULL, and
-// trusted_devices_token_user_global_idx on (device_token, user_id) WHERE tenant_id IS NULL. An
-// ON CONFLICT can name only one of them, with its predicate, so the statement is picked by
-// whether the row has a tenant.
+// Trust is per clinic (archon#1085 Q15), and the unique keys move in two releases. This one adds
+// the per-tenant partial indexes (trusted_devices_token_user_tenant_idx and
+// trusted_devices_token_user_global_idx, 20261101235835_add_trusted_devices_tenant_id) and keeps
+// trusted_devices_token_user_idx on (device_token, user_id), because the previous image upserts
+// with ON CONFLICT (device_token, user_id) and keeps serving while a rollout runs. Task 34 drops
+// the pair index once no such pod is left. Create therefore names no conflict target and works
+// under both sets of indexes; see upsertTrustedDevice for the order of its statements.
 //
-// This can't go through pop's ValidateAndCreate (no ON CONFLICT support), so it validates the
-// model explicitly before the raw-SQL upsert. Skipping that step would let an empty or
+// It validates the model explicitly before the raw SQL: skipping that would let an empty or
 // malformed device_token persist silently -- Validate is what enforces the 64-128 char length
 // that makes a device_token a device_token; see models.TrustedDevice.Validate.
 //
-// POSTGRES-ONLY, deliberately. `ON CONFLICT ... EXCLUDED` is PostgreSQL syntax; MySQL wants
-// `ON DUPLICATE KEY UPDATE`. That is not a regression this introduces: the fork already cannot
-// run on MySQL, because 20260120000003_change_unique_constraints.up.fizz creates PARTIAL unique
-// indexes (`... WHERE tenant_id IS NOT NULL`) for the multi-tenant model, and MySQL has no
-// partial indexes at all. All three clusters use `postgres://`.
-//
-// A dialect branch was considered and rejected: it would add a MySQL write path through the
-// authentication hot path that no test in this repo can exercise, and the portable alternative
-// (UPDATE, then INSERT if no rows matched) reintroduces exactly the concurrent-re-trust race the
-// unique index was added to close. Untestable code guarding an unreachable configuration is worse
-// than an honest dependency.
+// POSTGRES-ONLY, deliberately: `ON CONFLICT DO NOTHING` is PostgreSQL syntax. That is not a
+// regression this introduces: the fork already cannot run on MySQL, because
+// 20260120000003_change_unique_constraints.up.fizz creates PARTIAL unique indexes (`... WHERE
+// tenant_id IS NOT NULL`) for the multi-tenant model, and MySQL has no partial indexes at all. All
+// three clusters use `postgres://`.
 func (p *trustedDevicePersister) Create(trustedDevice models.TrustedDevice) error {
 	vErr, err := trustedDevice.Validate(p.db)
 	if err != nil {
@@ -77,30 +66,92 @@ func (p *trustedDevicePersister) Create(trustedDevice models.TrustedDevice) erro
 		return fmt.Errorf("trustedDevice object validation failed: %w", vErr)
 	}
 
-	if trustedDevice.TenantID != nil {
-		err = p.db.RawQuery(
-			`INSERT INTO trusted_devices (id, user_id, tenant_id, device_token, expires_at, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)
-			 ON CONFLICT (device_token, user_id, tenant_id) WHERE tenant_id IS NOT NULL
-			 DO UPDATE SET expires_at = EXCLUDED.expires_at, updated_at = EXCLUDED.updated_at`,
-			trustedDevice.ID, trustedDevice.UserID, *trustedDevice.TenantID, trustedDevice.DeviceToken,
-			trustedDevice.ExpiresAt, trustedDevice.CreatedAt, trustedDevice.UpdatedAt,
-		).Exec()
-	} else {
-		err = p.db.RawQuery(
-			`INSERT INTO trusted_devices (id, user_id, device_token, expires_at, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?)
-			 ON CONFLICT (device_token, user_id) WHERE tenant_id IS NULL
-			 DO UPDATE SET expires_at = EXCLUDED.expires_at, updated_at = EXCLUDED.updated_at`,
-			trustedDevice.ID, trustedDevice.UserID, trustedDevice.DeviceToken, trustedDevice.ExpiresAt,
-			trustedDevice.CreatedAt, trustedDevice.UpdatedAt,
-		).Exec()
-	}
-	if err != nil {
-		return fmt.Errorf("failed to store trustedDevice: %w", err)
+	return upsertTrustedDevice(sqlTrustWriter{db: p.db}, trustedDevice)
+}
+
+// trustWriter is the three statements Create is built from, so the order they run in can be
+// tested without a database.
+type trustWriter interface {
+	// refresh moves expires_at of the row holding this trust: same device_token, user and tenant
+	// (both NULL counting as the same).
+	refresh(models.TrustedDevice) (int, error)
+	// insertIfAbsent inserts the row unless any unique index already holds one like it.
+	insertIfAbsent(models.TrustedDevice) (int, error)
+	// moveToTenant gives the latest-expiring row of this (device_token, user_id) the row's tenant
+	// and expiry.
+	moveToTenant(models.TrustedDevice) (int, error)
+}
+
+// upsertTrustedDevice refreshes the row holding this trust, or inserts it, or -- while the pair
+// index stands -- moves the browser's one row for this user to this tenant. It stops at the first
+// statement that writes a row.
+//
+//  1. refresh: re-trusting under the same tenant, the common case.
+//  2. insertIfAbsent: first trust. ON CONFLICT DO NOTHING without a target, so a conflict on any
+//     unique index -- the pair index now, the per-tenant ones after task 34 -- writes nothing and
+//     raises nothing. Raising would abort the flow's transaction; a SAVEPOINT per write is the
+//     alternative this avoids.
+//  3. refresh again: the insert lost a race to a concurrent trust of the same tenant, committed
+//     between 1 and 2. That row is ours to refresh.
+//  4. moveToTenant: reached only while the pair index stands, when this browser and user already
+//     hold one row under another tenant (or none). The index allows no second row, so trust follows
+//     the flow that trusted last. Before task 34 a user belongs to one tenant, so this is the move
+//     between that tenant and a flow sent without X-Tenant-ID. It only ever grants the tenant
+//     whose flow just authenticated the user, and takes away the other one's skip.
+func upsertTrustedDevice(w trustWriter, trustedDevice models.TrustedDevice) error {
+	steps := []func(models.TrustedDevice) (int, error){w.refresh, w.insertIfAbsent, w.refresh, w.moveToTenant}
+	for _, step := range steps {
+		written, err := step(trustedDevice)
+		if err != nil {
+			return fmt.Errorf("failed to store trustedDevice: %w", err)
+		}
+		if written > 0 {
+			return nil
+		}
 	}
 
-	return nil
+	return fmt.Errorf("failed to store trustedDevice: no row was inserted or updated")
+}
+
+type sqlTrustWriter struct {
+	db *pop.Connection
+}
+
+func (w sqlTrustWriter) refresh(trustedDevice models.TrustedDevice) (int, error) {
+	return w.db.RawQuery(
+		`UPDATE trusted_devices SET expires_at = ?, updated_at = ?
+		 WHERE device_token = ? AND user_id = ? AND tenant_id IS NOT DISTINCT FROM ?`,
+		trustedDevice.ExpiresAt, trustedDevice.UpdatedAt,
+		trustedDevice.DeviceToken, trustedDevice.UserID, nullableTenant(trustedDevice.TenantID),
+	).ExecWithCount()
+}
+
+func (w sqlTrustWriter) insertIfAbsent(trustedDevice models.TrustedDevice) (int, error) {
+	return w.db.RawQuery(
+		`INSERT INTO trusted_devices (id, user_id, tenant_id, device_token, expires_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT DO NOTHING`,
+		trustedDevice.ID, trustedDevice.UserID, nullableTenant(trustedDevice.TenantID), trustedDevice.DeviceToken,
+		trustedDevice.ExpiresAt, trustedDevice.CreatedAt, trustedDevice.UpdatedAt,
+	).ExecWithCount()
+}
+
+func (w sqlTrustWriter) moveToTenant(trustedDevice models.TrustedDevice) (int, error) {
+	return w.db.RawQuery(
+		`UPDATE trusted_devices SET tenant_id = ?, expires_at = ?, updated_at = ?
+		 WHERE id = (SELECT id FROM trusted_devices WHERE device_token = ? AND user_id = ?
+		             ORDER BY expires_at DESC, id DESC LIMIT 1)`,
+		nullableTenant(trustedDevice.TenantID), trustedDevice.ExpiresAt, trustedDevice.UpdatedAt,
+		trustedDevice.DeviceToken, trustedDevice.UserID,
+	).ExecWithCount()
+}
+
+// nullableTenant passes a missing tenant to the driver as an untyped nil, i.e. SQL NULL.
+func nullableTenant(tenantID *uuid.UUID) interface{} {
+	if tenantID == nil {
+		return nil
+	}
+	return *tenantID
 }
 
 // FindByDeviceToken answers "has this device token ever been issued?" -- device_token alone, no

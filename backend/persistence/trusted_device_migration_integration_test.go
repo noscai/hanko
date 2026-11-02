@@ -54,9 +54,9 @@ func (s *trustedDeviceMigrationSuite) TestMigration_DedupesTrustedDevicesBeforeC
 	// can't insert duplicate (device_token, user_id) rows yet. Roll back
 	// that migration so duplicates can be inserted with raw SQL, then
 	// re-apply it and assert on the outcome. Two steps, because
-	// 20261101235835_add_trusted_devices_tenant_id runs after it and its
-	// down restores this very index; with tenant_id gone again, the raw
-	// inserts below match the schema this migration first ran against.
+	// 20261101235835_add_trusted_devices_tenant_id runs after it and leaves
+	// this index in place; rolling back both returns the table to the
+	// schema this migration first ran against.
 	s.Require().NoError(s.Storage.MigrateDown(2))
 
 	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
@@ -96,9 +96,9 @@ func (s *trustedDeviceMigrationSuite) TestMigration_DedupesTrustedDevicesBeforeC
 	s.Require().NoError(err)
 
 	// Sanity check: 5 rows exist before the migration runs.
-	preCount, err := s.Storage.GetConnection().Count(&models.TrustedDevice{})
+	preRows, err := s.rowsWithoutTenant("")
 	s.Require().NoError(err)
-	s.Require().Equal(5, preCount)
+	s.Require().Len(preRows, 5)
 
 	// This is the assertion that proves the outage path is unreachable:
 	// the migration must succeed even with duplicate (device_token,
@@ -184,10 +184,10 @@ func (s *trustedDeviceMigrationSuite) TestTenantMigration_BackfillsTenantBoundUs
 	s.Nil(globalRow.TenantID, "a global user's row must stay a legacy row")
 }
 
-// The down migration restores the (device_token, user_id) index the previous image upserts on.
-// One browser may by then hold one person's trust for two clinics, so the down must dedupe first or
-// the index -- and with it the rollback -- fails.
-func (s *trustedDeviceMigrationSuite) TestTenantMigration_DownDedupesRowsOfTwoTenants() {
+// 20261101235835 is additive: trusted_devices_token_user_idx, the previous image's ON CONFLICT
+// arbiter, survives it, so one browser still holds one row per user across tenants; and its down
+// drops only what it added, leaving that index in place.
+func (s *trustedDeviceMigrationSuite) TestTenantMigration_KeepsThePairIndexAndDownDropsOnlyTheTenant() {
 	if testing.Short() {
 		s.T().Skip("skipping test in short mode.")
 	}
@@ -198,32 +198,38 @@ func (s *trustedDeviceMigrationSuite) TestTenantMigration_DownDedupesRowsOfTwoTe
 	token := strings.Repeat("f", 64)
 	now := time.Now().UTC().Truncate(time.Second)
 
-	var keptID uuid.UUID
-	for i, tenant := range []string{"aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa", "bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb"} {
-		id := uuid.Must(uuid.NewV4())
-		if i == 1 {
-			keptID = id
-		}
-		s.Require().NoError(s.Storage.GetConnection().RawQuery(
+	insertUnder := func(tenant string) error {
+		return s.Storage.GetConnection().RawQuery(
 			"INSERT INTO trusted_devices (id, user_id, tenant_id, device_token, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-			id, userID, uuid.FromStringOrNil(tenant), token, now.Add(time.Duration(i+1)*time.Hour), now, now,
-		).Exec())
+			uuid.Must(uuid.NewV4()), userID, uuid.FromStringOrNil(tenant), token, now.Add(time.Hour), now, now,
+		).Exec()
 	}
+	s.Require().NoError(insertUnder("aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa"))
+	s.Error(insertUnder("bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb"),
+		"trusted_devices_token_user_idx must still allow one row per (device_token, user_id)")
 
-	s.Require().NoError(s.Storage.MigrateDown(1), "the down migration must succeed with one browser trusted for two clinics")
-
-	var rows []models.TrustedDevice
-	s.Require().NoError(s.Storage.GetConnection().RawQuery(
-		"SELECT id, user_id, device_token, expires_at, created_at, updated_at FROM trusted_devices WHERE device_token = ? AND user_id = ?",
-		token, userID,
-	).All(&rows))
-	s.Require().Len(rows, 1, "one row must survive per (device_token, user_id)")
-	s.Equal(keptID, rows[0].ID, "the survivor must be the row with the latest expires_at")
+	s.Require().NoError(s.Storage.MigrateDown(1))
 
 	_, err := s.insertTrustedDevice(token, userID, now.Add(48*time.Hour))
-	s.Error(err, "the restored (device_token, user_id) index must reject a duplicate")
+	s.Error(err, "after the down, trusted_devices_token_user_idx must still reject a duplicate")
+
+	rows, err := s.rowsWithoutTenant("WHERE device_token = ?", token)
+	s.Require().NoError(err)
+	s.Len(rows, 1, "the down keeps the rows; it drops only the tenant")
 
 	s.Require().NoError(s.Storage.MigrateUp())
+}
+
+// rowsWithoutTenant reads trusted_devices naming its columns, for a schema rolled back below
+// 20261101235835: pop's Count and All select every column of models.TrustedDevice, tenant_id
+// included, which does not exist there.
+func (s *trustedDeviceMigrationSuite) rowsWithoutTenant(where string, args ...interface{}) ([]models.TrustedDevice, error) {
+	var rows []models.TrustedDevice
+	err := s.Storage.GetConnection().RawQuery(
+		"SELECT id, user_id, device_token, expires_at, created_at, updated_at FROM trusted_devices "+where,
+		args...,
+	).All(&rows)
+	return rows, err
 }
 
 func (s *trustedDeviceMigrationSuite) insertTrustedDevice(deviceToken string, userID uuid.UUID, expiresAt time.Time) (uuid.UUID, error) {
