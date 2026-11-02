@@ -1,0 +1,21 @@
+backend/handler/trusted_device_admin.go
+  s_72ae283317499b::t_fc3f2bd62f0474 27-31,49
+backend/handler/trusted_device_admin_test.go
+  s_72ae283317499b::t_f77171fbf5426f 146-148,153-154,156,234,236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5081c8d8930cd24898bf53728cfe70f8f4b82bd4",
+  "prompts": {},
+  "sessions": {
+    "s_72ae283317499b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "219a2835-1bf2-4ccf-97e2-ab2fb90e92f2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}
