@@ -3,6 +3,7 @@ package credential_usage
 import (
 	"net/http"
 	"net/http/httptest"
+	"testing"
 
 	"github.com/gobuffalo/pop/v6"
 	"github.com/gofrs/uuid"
@@ -13,6 +14,7 @@ import (
 	"github.com/teamhanko/hanko/backend/v2/flowpilot"
 	"github.com/teamhanko/hanko/backend/v2/persistence"
 	"github.com/teamhanko/hanko/backend/v2/persistence/models"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Shared harness for the two login-flow action tests (action_password_login, action_continue_with_
@@ -129,6 +131,11 @@ type fakeLoginPersister struct {
 	emails    *fakeEmailPersister
 	usernames *fakeUsernamePersister
 	users     *fakeLoginUserPersister
+	passwords fakePasswordCredentials
+}
+
+func (f *fakeLoginPersister) GetPasswordCredentialPersisterWithConnection(_ *pop.Connection) persistence.PasswordCredentialPersister {
+	return f.passwords
 }
 
 func (f *fakeLoginPersister) GetEmailPersisterWithConnection(_ *pop.Connection) persistence.EmailPersister {
@@ -152,6 +159,42 @@ type fakePasswordSvc struct {
 func (f *fakePasswordSvc) VerifyPassword(_ *pop.Connection, userID uuid.UUID, _ string) error {
 	f.verifiedFor = userID
 	return f.err
+}
+
+// fakePasswordCredentials is the password_credentials table the real password service reads.
+type fakePasswordCredentials struct {
+	persistence.PasswordCredentialPersister
+	byUser map[uuid.UUID]*models.PasswordCredential
+}
+
+func (f fakePasswordCredentials) GetByUserID(id uuid.UUID) (*models.PasswordCredential, error) {
+	return f.byUser[id], nil
+}
+
+// knownPassword is the password whose bcrypt hash withRealPasswordCheck stores for the user.
+const knownPassword = "secret"
+
+// withRealPasswordCheck replaces the fake password service with the real one, reading a password
+// credential that holds the bcrypt hash of knownPassword for id, so a test proves the password is
+// actually checked against that user rather than that a fake was called.
+func withRealPasswordCheck(t *testing.T, deps *shared.Dependencies, id uuid.UUID) {
+	t.Helper()
+	hash, err := bcrypt.GenerateFromPassword([]byte(knownPassword), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash the known password: %v", err)
+	}
+	passwords := fakePasswordCredentials{byUser: map[uuid.UUID]*models.PasswordCredential{
+		id: {ID: uuid.Must(uuid.NewV4()), UserId: id, Password: string(hash)},
+	}}
+	switch p := deps.Persister.(type) {
+	case *fakeLoginPersister:
+		p.passwords = passwords
+	case *tenantBoundPersister:
+		p.passwords = passwords
+	default:
+		t.Fatalf("withRealPasswordCheck: unsupported persister %T", deps.Persister)
+	}
+	deps.PasswordService = services.NewPasswordService(deps.Persister)
 }
 
 type fakeAuditLogger struct {
@@ -251,8 +294,13 @@ func (f *tenantBoundEmails) FindByAddressWithTenantFallback(address string, tena
 
 type tenantBoundPersister struct {
 	persistence.Persister
-	emails *tenantBoundEmails
-	users  *tenantBoundUsers
+	emails    *tenantBoundEmails
+	users     *tenantBoundUsers
+	passwords fakePasswordCredentials
+}
+
+func (f *tenantBoundPersister) GetPasswordCredentialPersisterWithConnection(_ *pop.Connection) persistence.PasswordCredentialPersister {
+	return f.passwords
 }
 
 func (f *tenantBoundPersister) GetEmailPersisterWithConnection(_ *pop.Connection) persistence.EmailPersister {
