@@ -143,13 +143,17 @@ func TestTrustedDeviceAdminHandler_Delete_UserWithoutDevicesIsNoContent(t *testi
 	assert.Len(t, fakes.trustedDevices.rows, 3)
 }
 
-func TestTrustedDeviceAdminHandler_Delete_UnknownUserIsNotFound(t *testing.T) {
+// A 404 from this route can only mean the route is missing (a Hanko image without it), so the
+// caller can treat any 404 as a failed revocation. An unknown user has no trusted browser left.
+func TestTrustedDeviceAdminHandler_Delete_UnknownUserIsNoContent(t *testing.T) {
 	fakes := newTrustedDeviceAdminFakes()
 
 	rec := serveTrustedDeviceAdminDelete(t, fakes, trustedDeviceAdminUnknownUser)
 
-	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	assert.Empty(t, rec.Body.String())
 	assert.Empty(t, fakes.trustedDevices.deleteCalls)
+	assert.Len(t, fakes.trustedDevices.rows, 3)
 }
 
 func TestTrustedDeviceAdminHandler_Delete_MalformedUserIDIsBadRequest(t *testing.T) {
@@ -227,9 +231,9 @@ func (s *trustedDeviceAdminSuite) TestTrustedDeviceAdminHandler_Delete() {
 			expectedStatusCode: http.StatusBadRequest,
 		},
 		{
-			name:               "should fail on non existing user",
+			name:               "should succeed for a non existing user",
 			userId:             trustedDeviceAdminUnknownUser,
-			expectedStatusCode: http.StatusNotFound,
+			expectedStatusCode: http.StatusNoContent,
 		},
 	}
 

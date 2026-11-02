@@ -24,8 +24,11 @@ func NewTrustedDeviceAdminHandler(persister persistence.Persister) TrustedDevice
 
 // Delete revokes every browser the user trusted, so each one asks for the second factor again.
 // A ClinicOS 2FA reset of a user shared with other clinics deletes only the user's OTP secret, not
-// the user, and the trusted_devices cascade on user deletion never fires. A user with no trusted
-// devices is still 204: the caller wants the end state, not a record that something was removed.
+// the user, and the trusted_devices cascade on user deletion never fires. 204 means no trusted
+// browser remains: revoked now, never had one, or no such user (the cascade on user deletion
+// leaves an unknown user nothing to trust). The caller wants the end state, not a record that
+// something was removed. This route therefore never answers 404 itself, so a 404 can only be a
+// Hanko image without the route, and the caller treats it as a failed revocation.
 func (h *trustedDeviceAdminHandler) Delete(ctx echo.Context) error {
 	deleteDto, err := loadDto[admin.DeleteTrustedDevicesRequestDto](ctx)
 	if err != nil {
@@ -43,7 +46,7 @@ func (h *trustedDeviceAdminHandler) Delete(ctx echo.Context) error {
 	}
 
 	if userModel == nil {
-		return echo.NewHTTPError(http.StatusNotFound, "user not found")
+		return ctx.NoContent(http.StatusNoContent)
 	}
 
 	err = h.persister.GetTrustedDevicePersister().DeleteByUserID(userModel.ID)
