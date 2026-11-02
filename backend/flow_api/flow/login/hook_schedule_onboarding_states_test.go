@@ -67,9 +67,27 @@ func (s *trustStore) FindValidTrust(token string, userID uuid.UUID, tenantID *uu
 
 func (s *trustStore) DeleteByUserID(uuid.UUID) error { return nil }
 
+type fakeOnboardingUsers struct {
+	persistence.UserPersister
+	users  map[uuid.UUID]*models.User
+	getErr error
+}
+
+func (f *fakeOnboardingUsers) Get(id uuid.UUID) (*models.User, error) {
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
+	return f.users[id], nil
+}
+
 type fakeOnboardingPersister struct {
 	persistence.Persister
 	trust persistence.TrustedDevicePersister
+	users *fakeOnboardingUsers
+}
+
+func (f *fakeOnboardingPersister) GetUserPersisterWithConnection(_ *pop.Connection) persistence.UserPersister {
+	return f.users
 }
 
 func (f *fakeOnboardingPersister) GetTrustedDevicePersisterWithConnection(_ *pop.Connection) persistence.TrustedDevicePersister {
@@ -132,7 +150,7 @@ func newOnboardingCtx(t *testing.T, requestTenant *uuid.UUID, trustedUnder *uuid
 		deps: &shared.Dependencies{
 			Cfg:         cfg,
 			HttpContext: echo.New().NewContext(req, httptest.NewRecorder()),
-			Persister:   &fakeOnboardingPersister{trust: store},
+			Persister:   &fakeOnboardingPersister{trust: store, users: &fakeOnboardingUsers{}},
 			TenantID:    requestTenant,
 		},
 	}
@@ -174,4 +192,49 @@ func TestScheduleOnboardingStates_KeepsAPreAuthenticatedFlowsPin(t *testing.T) {
 
 	assert.Contains(t, ctx.scheduled, shared.StateLoginOTP)
 	assert.Equal(t, &onboardingTenantB, shared.FlowTenantID(ctx.Stash(), &onboardingTenantA))
+}
+
+func withOnboardingUser(ctx *fakeOnboardingCtx, user *models.User) *fakeOnboardingUsers {
+	users := ctx.deps.Persister.(*fakeOnboardingPersister).users
+	users.users = map[uuid.UUID]*models.User{user.ID: user}
+	return users
+}
+
+// A tenant-bound user can run a header-less login (the unscoped lookup finds them), and their
+// session names their own tenant whatever the header says. Trust is then decided and written
+// under that same tenant: their trust for A skips A's code, and the flow is pinned to A, so the
+// trust row is not moved to "no tenant" and back each time they switch between headered and
+// header-less flows.
+func TestScheduleOnboardingStates_BoundUserWithoutHeaderRunsUnderTheirOwnTenant(t *testing.T) {
+	ctx := newOnboardingCtx(t, nil, &onboardingTenantA)
+	withOnboardingUser(ctx, &models.User{ID: onboardingUserID, TenantID: &onboardingTenantA})
+
+	require.NoError(t, ScheduleOnboardingStates{}.Execute(ctx))
+
+	assert.NotContains(t, ctx.scheduled, shared.StateLoginOTP, "the bound user's trust for A must answer their header-less login")
+	assert.NotContains(t, ctx.scheduled, shared.StateDeviceTrust)
+	assert.Equal(t, &onboardingTenantA, shared.FlowTenantID(ctx.Stash(), nil),
+		"the flow must be pinned to the bound user's own tenant, the one their session names")
+}
+
+// A global user has no tenant of their own, so the flow keeps the request's tenant.
+func TestScheduleOnboardingStates_GlobalUserRunsUnderTheRequestTenant(t *testing.T) {
+	ctx := newOnboardingCtx(t, &onboardingTenantB, &onboardingTenantA)
+	withOnboardingUser(ctx, &models.User{ID: onboardingUserID})
+
+	require.NoError(t, ScheduleOnboardingStates{}.Execute(ctx))
+
+	assert.Contains(t, ctx.scheduled, shared.StateLoginOTP)
+	assert.Equal(t, &onboardingTenantB, shared.FlowTenantID(ctx.Stash(), nil))
+}
+
+// The user cannot be read: the flow fails rather than deciding trust under a guessed tenant.
+func TestScheduleOnboardingStates_UserLookupFailureFailsTheFlow(t *testing.T) {
+	ctx := newOnboardingCtx(t, &onboardingTenantA, &onboardingTenantA)
+	withOnboardingUser(ctx, &models.User{ID: onboardingUserID}).getErr = assert.AnError
+
+	err := ScheduleOnboardingStates{}.Execute(ctx)
+
+	require.ErrorIs(t, err, assert.AnError)
+	assert.Empty(t, ctx.scheduled)
 }
