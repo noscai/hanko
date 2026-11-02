@@ -52,9 +52,12 @@ func (s *trustedDeviceMigrationSuite) TestMigration_DedupesTrustedDevicesBeforeC
 	// SetupTest() already ran MigrateUp(), which means the migration under
 	// test has already run and its unique index already exists -- so we
 	// can't insert duplicate (device_token, user_id) rows yet. Roll back
-	// just that one migration so duplicates can be inserted with raw SQL,
-	// then re-apply it and assert on the outcome.
-	s.Require().NoError(s.Storage.MigrateDown(1))
+	// that migration so duplicates can be inserted with raw SQL, then
+	// re-apply it and assert on the outcome. Two steps, because
+	// 20261101235835_add_trusted_devices_tenant_id runs after it and its
+	// down restores this very index; with tenant_id gone again, the raw
+	// inserts below match the schema this migration first ran against.
+	s.Require().NoError(s.Storage.MigrateDown(2))
 
 	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
 
@@ -135,6 +138,92 @@ func (s *trustedDeviceMigrationSuite) TestMigration_DedupesTrustedDevicesBeforeC
 	tieLowExists, err := s.Storage.GetConnection().Where("id = ?", tieLowID).Exists(&models.TrustedDevice{})
 	s.Require().NoError(err)
 	s.False(tieLowExists, "the losing tied-expires_at duplicate (lower id) must have been deleted")
+}
+
+// TestTenantMigration_BackfillsTenantBoundUsersAndKeepsGlobalRowsLegacy covers
+// 20261101235835_add_trusted_devices_tenant_id. Login flows send X-Tenant-ID, and after this
+// migration a NULL row no longer answers them, so without the backfill every trusted browser would
+// be asked for a code once after deploy. A tenant-bound user can only be signed in under their own
+// tenant, so their rows take that tenant; a global user's rows stay NULL.
+func (s *trustedDeviceMigrationSuite) TestTenantMigration_BackfillsTenantBoundUsersAndKeepsGlobalRowsLegacy() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	s.Require().NoError(s.Storage.MigrateDown(1))
+	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
+
+	tenantID := uuid.FromStringOrNil("aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa")
+	boundUserID := uuid.FromStringOrNil("dddddddd-4444-4444-8444-dddddddddddd")
+	globalUserID := uuid.FromStringOrNil(fixtureUserID)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	s.Require().NoError(s.Storage.GetConnection().RawQuery(
+		"INSERT INTO tenants (id, name, slug, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+		tenantID, "Tenant A", "tenant-a", true, now, now,
+	).Exec())
+	s.Require().NoError(s.Storage.GetConnection().RawQuery(
+		"INSERT INTO users (id, tenant_id, created_at, updated_at) VALUES (?, ?, ?, ?)",
+		boundUserID, tenantID, now, now,
+	).Exec())
+
+	boundRowID, err := s.insertTrustedDevice(strings.Repeat("d", 64), boundUserID, now.Add(time.Hour))
+	s.Require().NoError(err)
+	globalRowID, err := s.insertTrustedDevice(strings.Repeat("e", 64), globalUserID, now.Add(time.Hour))
+	s.Require().NoError(err)
+
+	s.Require().NoError(s.Storage.MigrateUp())
+
+	var boundRow models.TrustedDevice
+	s.Require().NoError(s.Storage.GetConnection().Find(&boundRow, boundRowID))
+	s.Require().NotNil(boundRow.TenantID, "a tenant-bound user's row must take the user's tenant")
+	s.Equal(tenantID, *boundRow.TenantID)
+
+	var globalRow models.TrustedDevice
+	s.Require().NoError(s.Storage.GetConnection().Find(&globalRow, globalRowID))
+	s.Nil(globalRow.TenantID, "a global user's row must stay a legacy row")
+}
+
+// The down migration restores the (device_token, user_id) index the previous image upserts on.
+// One browser may by then hold one person's trust for two clinics, so the down must dedupe first or
+// the index -- and with it the rollback -- fails.
+func (s *trustedDeviceMigrationSuite) TestTenantMigration_DownDedupesRowsOfTwoTenants() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
+
+	userID := uuid.FromStringOrNil(fixtureUserID)
+	token := strings.Repeat("f", 64)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	var keptID uuid.UUID
+	for i, tenant := range []string{"aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa", "bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb"} {
+		id := uuid.Must(uuid.NewV4())
+		if i == 1 {
+			keptID = id
+		}
+		s.Require().NoError(s.Storage.GetConnection().RawQuery(
+			"INSERT INTO trusted_devices (id, user_id, tenant_id, device_token, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+			id, userID, uuid.FromStringOrNil(tenant), token, now.Add(time.Duration(i+1)*time.Hour), now, now,
+		).Exec())
+	}
+
+	s.Require().NoError(s.Storage.MigrateDown(1), "the down migration must succeed with one browser trusted for two clinics")
+
+	var rows []models.TrustedDevice
+	s.Require().NoError(s.Storage.GetConnection().RawQuery(
+		"SELECT id, user_id, device_token, expires_at, created_at, updated_at FROM trusted_devices WHERE device_token = ? AND user_id = ?",
+		token, userID,
+	).All(&rows))
+	s.Require().Len(rows, 1, "one row must survive per (device_token, user_id)")
+	s.Equal(keptID, rows[0].ID, "the survivor must be the row with the latest expires_at")
+
+	_, err := s.insertTrustedDevice(token, userID, now.Add(48*time.Hour))
+	s.Error(err, "the restored (device_token, user_id) index must reject a duplicate")
+
+	s.Require().NoError(s.Storage.MigrateUp())
 }
 
 func (s *trustedDeviceMigrationSuite) insertTrustedDevice(deviceToken string, userID uuid.UUID, expiresAt time.Time) (uuid.UUID, error) {

@@ -66,7 +66,7 @@ func (s *trustedDevicePersisterSuite) TestFindValidTrust_ReturnsRowForCorrectTok
 		UpdatedAt:   now,
 	}))
 
-	found, err := persister.FindValidTrust(token, userID, now)
+	found, err := persister.FindValidTrust(token, userID, nil, now)
 	s.Require().NoError(err)
 	s.Require().NotNil(found)
 	s.Equal(token, found.DeviceToken)
@@ -96,7 +96,7 @@ func (s *trustedDevicePersisterSuite) TestFindValidTrust_WrongUser_ReturnsNilNil
 		UpdatedAt:   now,
 	}))
 
-	found, err := persister.FindValidTrust(token, otherUserID, now)
+	found, err := persister.FindValidTrust(token, otherUserID, nil, now)
 	s.Require().NoError(err)
 	s.Nil(found, "a device_token trusted by one user must not be reported as trusted for another")
 }
@@ -113,7 +113,7 @@ func (s *trustedDevicePersisterSuite) TestFindValidTrust_ExpiredInPast_ReturnsNi
 	_, err := s.insertTrustedDevice(token, userID, now.Add(-1*time.Minute))
 	s.Require().NoError(err)
 
-	found, err := s.Storage.GetTrustedDevicePersister().FindValidTrust(token, userID, now)
+	found, err := s.Storage.GetTrustedDevicePersister().FindValidTrust(token, userID, nil, now)
 	s.Require().NoError(err)
 	s.Nil(found)
 }
@@ -133,13 +133,13 @@ func (s *trustedDevicePersisterSuite) TestFindValidTrust_ExpiresAtEqualsNow_Retu
 	_, err := s.insertTrustedDevice(token, userID, now)
 	s.Require().NoError(err)
 
-	found, err := s.Storage.GetTrustedDevicePersister().FindValidTrust(token, userID, now)
+	found, err := s.Storage.GetTrustedDevicePersister().FindValidTrust(token, userID, nil, now)
 	s.Require().NoError(err)
 	s.Nil(found, "expires_at == now must not count as valid -- the comparison is strictly greater")
 
 	// Complement the boundary: one millisecond past `now` must count as valid, proving the
 	// nil result above is really about the boundary and not some other bug in the query.
-	found, err = s.Storage.GetTrustedDevicePersister().FindValidTrust(token, userID, now.Add(-1*time.Millisecond))
+	found, err = s.Storage.GetTrustedDevicePersister().FindValidTrust(token, userID, nil, now.Add(-1*time.Millisecond))
 	s.Require().NoError(err)
 	s.Require().NotNil(found, "a row expiring strictly after `now` must be reported valid")
 }
@@ -174,21 +174,21 @@ func (s *trustedDevicePersisterSuite) TestFindValidTrust_OrderIndependent() {
 
 	persister := s.Storage.GetTrustedDevicePersister()
 
-	found, err := persister.FindValidTrust(tokenX, userA, now)
+	found, err := persister.FindValidTrust(tokenX, userA, nil, now)
 	s.Require().NoError(err)
 	s.Require().NotNil(found)
 	s.WithinDuration(now.Add(2*time.Hour), found.ExpiresAt, time.Second)
 
-	found, err = persister.FindValidTrust(tokenX, userB, now)
+	found, err = persister.FindValidTrust(tokenX, userB, nil, now)
 	s.Require().NoError(err)
 	s.Nil(found, "userB's row on tokenX is expired")
 
-	found, err = persister.FindValidTrust(tokenY, userB, now)
+	found, err = persister.FindValidTrust(tokenY, userB, nil, now)
 	s.Require().NoError(err)
 	s.Require().NotNil(found)
 	s.WithinDuration(now.Add(3*time.Hour), found.ExpiresAt, time.Second)
 
-	found, err = persister.FindValidTrust(tokenY, userA, now)
+	found, err = persister.FindValidTrust(tokenY, userA, nil, now)
 	s.Require().NoError(err)
 	s.Nil(found, "userA's row on tokenY is expired")
 }
@@ -290,12 +290,12 @@ func (s *trustedDevicePersisterSuite) TestCreate_TwoUsersSharingDeviceToken_Keep
 	s.Require().NoError(s.Storage.GetConnection().Where("device_token = ?", token).All(&rows))
 	s.Require().Len(rows, 2, "two users sharing one device_token must each keep their own row")
 
-	foundA, err := persister.FindValidTrust(token, userA, now)
+	foundA, err := persister.FindValidTrust(token, userA, nil, now)
 	s.Require().NoError(err)
 	s.Require().NotNil(foundA)
 	s.WithinDuration(now.Add(1*time.Hour), foundA.ExpiresAt, time.Second)
 
-	foundB, err := persister.FindValidTrust(token, userB, now)
+	foundB, err := persister.FindValidTrust(token, userB, nil, now)
 	s.Require().NoError(err)
 	s.Require().NotNil(foundB)
 	s.WithinDuration(now.Add(5*time.Hour), foundB.ExpiresAt, time.Second)
@@ -358,11 +358,163 @@ func (s *trustedDevicePersisterSuite) TestDeleteByUserID_RemovesEveryRowOfThatUs
 	s.Require().NoError(s.Storage.GetConnection().Where("user_id = ?", userA).All(&rowsA))
 	s.Empty(rowsA, "every trusted device of the user must be deleted, expired ones included")
 
-	foundB, err := persister.FindValidTrust(sharedToken, userB, now)
+	foundB, err := persister.FindValidTrust(sharedToken, userB, nil, now)
 	s.Require().NoError(err)
 	s.NotNil(foundB, "another user trusting the same browser must keep their trust")
 
 	s.Require().NoError(persister.DeleteByUserID(userA), "deleting a user's trusted devices twice must not fail")
+}
+
+// tenantA and tenantB are clinics for the per-tenant trust cases below. trusted_devices.tenant_id
+// has no foreign key (see 20261101235835_add_trusted_devices_tenant_id), so no tenants row is needed.
+var (
+	trustTenantA = uuid.FromStringOrNil("aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa")
+	trustTenantB = uuid.FromStringOrNil("bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb")
+)
+
+// TestFindValidTrust_TrustUnderOneTenantDoesNotAnswerAnother is archon#1085 6.2 #20 against
+// Postgres: one Hanko user signs in to several clinics, and a browser trusted while signing in to
+// clinic A must not skip clinic B's second factor.
+func (s *trustedDevicePersisterSuite) TestFindValidTrust_TrustUnderOneTenantDoesNotAnswerAnother() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	userID := uuid.FromStringOrNil(fixtureUserID)
+	token := strings.Repeat("l", 64)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	persister := s.Storage.GetTrustedDevicePersister()
+	s.Require().NoError(persister.Create(models.TrustedDevice{
+		ID:          s.mustNewUUID(),
+		UserID:      userID,
+		TenantID:    &trustTenantA,
+		DeviceToken: token,
+		ExpiresAt:   now.Add(1 * time.Hour),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}))
+
+	found, err := persister.FindValidTrust(token, userID, &trustTenantA, now)
+	s.Require().NoError(err)
+	s.Require().NotNil(found, "trust recorded under A must answer A")
+	s.Require().NotNil(found.TenantID)
+	s.Equal(trustTenantA, *found.TenantID)
+
+	found, err = persister.FindValidTrust(token, userID, &trustTenantB, now)
+	s.Require().NoError(err)
+	s.Nil(found, "trust recorded under A must not answer B")
+
+	found, err = persister.FindValidTrust(token, userID, nil, now)
+	s.Require().NoError(err)
+	s.Nil(found, "trust recorded under A must not answer a flow without a tenant")
+}
+
+// A row written before trust was scoped has no tenant: it answers flows without a tenant only.
+func (s *trustedDevicePersisterSuite) TestFindValidTrust_LegacyRowAnswersOnlyAFlowWithoutTenant() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	userID := uuid.FromStringOrNil(fixtureUserID)
+	token := strings.Repeat("m", 64)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	_, err := s.insertTrustedDevice(token, userID, now.Add(1*time.Hour))
+	s.Require().NoError(err)
+
+	persister := s.Storage.GetTrustedDevicePersister()
+	found, err := persister.FindValidTrust(token, userID, nil, now)
+	s.Require().NoError(err)
+	s.NotNil(found)
+
+	found, err = persister.FindValidTrust(token, userID, &trustTenantA, now)
+	s.Require().NoError(err)
+	s.Nil(found, "a legacy row must not answer a clinic's flow")
+}
+
+// One browser holds the same person's trust for two clinics and for a flow without a tenant, one
+// row each, and re-trusting under one of them refreshes that row only. This is what the partial
+// unique indexes of 20261101235835 are for: on the old (device_token, user_id) index the second
+// Create would have overwritten the first clinic's row.
+func (s *trustedDevicePersisterSuite) TestCreate_OneBrowserHoldsTrustPerTenant() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	userID := uuid.FromStringOrNil(fixtureUserID)
+	token := strings.Repeat("n", 64)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	persister := s.Storage.GetTrustedDevicePersister()
+	create := func(tenantID *uuid.UUID, expiresAt time.Time) {
+		s.Require().NoError(persister.Create(models.TrustedDevice{
+			ID:          s.mustNewUUID(),
+			UserID:      userID,
+			TenantID:    tenantID,
+			DeviceToken: token,
+			ExpiresAt:   expiresAt,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}))
+	}
+
+	create(&trustTenantA, now.Add(1*time.Hour))
+	create(&trustTenantB, now.Add(2*time.Hour))
+	create(nil, now.Add(3*time.Hour))
+	create(&trustTenantA, now.Add(4*time.Hour))
+	create(nil, now.Add(5*time.Hour))
+
+	var rows []models.TrustedDevice
+	s.Require().NoError(s.Storage.GetConnection().
+		Where("device_token = ? AND user_id = ?", token, userID).
+		All(&rows))
+	s.Require().Len(rows, 3, "one row per tenant, and one for flows without a tenant")
+
+	foundA, err := persister.FindValidTrust(token, userID, &trustTenantA, now)
+	s.Require().NoError(err)
+	s.Require().NotNil(foundA)
+	s.WithinDuration(now.Add(4*time.Hour), foundA.ExpiresAt, time.Second, "re-trusting under A refreshes A's row")
+
+	foundB, err := persister.FindValidTrust(token, userID, &trustTenantB, now)
+	s.Require().NoError(err)
+	s.Require().NotNil(foundB)
+	s.WithinDuration(now.Add(2*time.Hour), foundB.ExpiresAt, time.Second, "re-trusting under A leaves B's row alone")
+
+	foundNone, err := persister.FindValidTrust(token, userID, nil, now)
+	s.Require().NoError(err)
+	s.Require().NotNil(foundNone)
+	s.WithinDuration(now.Add(5*time.Hour), foundNone.ExpiresAt, time.Second, "re-trusting without a tenant refreshes that row")
+}
+
+// The admin 2FA reset deletes the person's trust in every clinic, not only one tenant's.
+func (s *trustedDevicePersisterSuite) TestDeleteByUserID_RemovesRowsUnderEveryTenant() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	userID := uuid.FromStringOrNil(fixtureUserID)
+	token := strings.Repeat("o", 64)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	persister := s.Storage.GetTrustedDevicePersister()
+	for _, tenantID := range []*uuid.UUID{&trustTenantA, &trustTenantB, nil} {
+		s.Require().NoError(persister.Create(models.TrustedDevice{
+			ID:          s.mustNewUUID(),
+			UserID:      userID,
+			TenantID:    tenantID,
+			DeviceToken: token,
+			ExpiresAt:   now.Add(1 * time.Hour),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}))
+	}
+
+	s.Require().NoError(persister.DeleteByUserID(userID))
+
+	count, err := s.Storage.GetConnection().Where("user_id = ?", userID).Count(&models.TrustedDevice{})
+	s.Require().NoError(err)
+	s.Zero(count, "every trust row of the user must be deleted, whatever its tenant")
 }
 
 func (s *trustedDevicePersisterSuite) mustNewUUID() uuid.UUID {

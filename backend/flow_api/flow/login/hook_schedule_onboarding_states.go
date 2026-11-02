@@ -22,6 +22,15 @@ func (h ScheduleOnboardingStates) Execute(c flowpilot.HookExecutionContext) erro
 		return fmt.Errorf("failed to set login_onboarding_scheduled to the stash: %w", err)
 	}
 
+	// Device trust is decided below under the flow tenant, but issued, with the session, by a later
+	// request that sends its own X-Tenant-ID. Pin the tenant now so the trust decided here, the trust
+	// row written and the session's tenant claim are the same clinic's (archon#1085 Q15, Q18). A
+	// pre-authenticated flow is already pinned to its service token's tenant; this keeps that.
+	deps := h.GetDeps(c)
+	if err := shared.PinFlowTenantID(c.Stash(), shared.FlowTenantID(c.Stash(), deps.TenantID)); err != nil {
+		return fmt.Errorf("failed to pin the flow tenant: %w", err)
+	}
+
 	mfaUsageStates := h.determineMFAUsageStates(c)
 	mfaCreationStates := h.determineMFACreationStatesForPreAuth(c)
 	userDetailOnboardingStates := h.determineUserDetailOnboardingStates(c)
@@ -63,6 +72,7 @@ func (h ScheduleOnboardingStates) determineMFAUsageStates(c flowpilot.HookExecut
 		Persister:   deps.Persister.GetTrustedDevicePersisterWithConnection(deps.Tx),
 		Cfg:         deps.Cfg,
 		HttpContext: deps.HttpContext,
+		TenantID:    shared.FlowTenantID(c.Stash(), deps.TenantID),
 	}
 
 	userID := uuid.FromStringOrNil(c.Stash().Get(shared.StashPathUserID).String())

@@ -72,6 +72,7 @@ func (h IssueTrustDeviceCookie) Execute(c flowpilot.HookExecutionContext) error 
 		Persister:   deps.Persister.GetTrustedDevicePersisterWithConnection(deps.Tx),
 		Cfg:         deps.Cfg,
 		HttpContext: deps.HttpContext,
+		TenantID:    shared.FlowTenantID(c.Stash(), deps.TenantID),
 	}
 
 	deviceToken, err := resolveDeviceToken(deviceTrustService, presentedDeviceCookie(deps))

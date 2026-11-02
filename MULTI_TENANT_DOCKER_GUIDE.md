@@ -184,15 +184,23 @@ migration), and registration under an `X-Tenant-ID` header still creates a tenan
 > **Do not enable `keep_users_global` on a running deployment without its rollout.** Two things
 > must come first:
 > 1. **Sessions must carry the flow tenant.** A kept-global user has no `tenant_id`, so their
->    session JWT carries no `tenant_id` claim. A relying party that checks the claim (ClinicOS
->    does) refuses those sessions, and one that trusts it has nothing to bind. Wait until the
->    change that stamps the flow tenant into a kept-global user's session is deployed (ClinicOS:
->    archon#1085 task 17).
+>    session JWT names the flow's tenant instead: the `X-Tenant-ID` the flow ran under, or, for a
+>    pre-authenticated flow, the tenant its service token names. A relying party that checks the
+>    claim (ClinicOS does) refuses sessions without one. Every Hanko pod must run a version with
+>    migration `20261101235835_add_trusted_devices_tenant_id` before the flag is turned on
+>    (ClinicOS: archon#1085 task 17).
 > 2. **Users must be un-adopted, one way.** Already-adopted users stay bound until they are
 >    un-adopted (`tenant_id = NULL` on the user and related rows). That data step can't be undone
 >    by turning the flag off again, and it can collide with the global unique email index. Run it
 >    from a reviewed runbook, after a verified database snapshot, with before/after counts
 >    (ClinicOS: archon#1085 task 34).
+
+**Device trust is per tenant.** A trusted browser (`trusted_devices`) records the tenant whose
+flow trusted it and skips the second factor only in that tenant's flows, so one identity holds a
+separate trust per clinic on the same browser. A flow's tenant is fixed once the user is
+identified: a later request with another `X-Tenant-ID` does not move it. Rows without a tenant
+answer only flows without one; the migration gives existing rows of tenant-bound users their
+user's tenant. Rolling back needs that migration run down together with the image revert.
 
 ### Verify Migration Success
 

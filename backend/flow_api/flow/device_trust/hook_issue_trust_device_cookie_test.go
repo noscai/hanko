@@ -84,13 +84,13 @@ func (f *fakeTrustedDevicePersister) FindByDeviceToken(token string) (*models.Tr
 // FindValidTrust answers from the rows this fake has actually stored, so a test can feed the
 // cookie the hook emitted straight back into CheckDeviceTrust and see whether the write path and
 // the read path agree.
-func (f *fakeTrustedDevicePersister) FindValidTrust(token string, userID uuid.UUID, now time.Time) (*models.TrustedDevice, error) {
+func (f *fakeTrustedDevicePersister) FindValidTrust(token string, userID uuid.UUID, tenantID *uuid.UUID, now time.Time) (*models.TrustedDevice, error) {
 	if f.findErr != nil {
 		return nil, f.findErr
 	}
 	for i := range f.created {
 		row := f.created[i]
-		if row.DeviceToken == token && row.UserID == userID && row.ExpiresAt.After(now) {
+		if row.DeviceToken == token && row.UserID == userID && row.MatchesTenant(tenantID) && row.ExpiresAt.After(now) {
 			return &row, nil
 		}
 	}
