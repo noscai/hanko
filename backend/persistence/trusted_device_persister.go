@@ -11,6 +11,11 @@ import (
 	"github.com/teamhanko/hanko/backend/v2/persistence/models"
 )
 
+// ErrTrustedDeviceNotWritten is Create finding no row to refresh, insert or move: a concurrent
+// delete (an admin revocation) removed the conflicting row between the statements. The trust was
+// not recorded, but nothing else failed.
+var ErrTrustedDeviceNotWritten = errors.New("no row was inserted or updated")
+
 type TrustedDevicePersister interface {
 	Create(models.TrustedDevice) error
 	FindByDeviceToken(string) (*models.TrustedDevice, error)
@@ -110,7 +115,7 @@ func upsertTrustedDevice(w trustWriter, trustedDevice models.TrustedDevice) erro
 		}
 	}
 
-	return fmt.Errorf("failed to store trustedDevice: no row was inserted or updated")
+	return fmt.Errorf("failed to store trustedDevice: %w", ErrTrustedDeviceNotWritten)
 }
 
 type sqlTrustWriter struct {

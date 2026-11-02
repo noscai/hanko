@@ -687,3 +687,20 @@ func TestIssueTrustDeviceCookie_Execute_WritesTrustUnderThePinnedFlowTenant(t *t
 		})
 	}
 }
+
+// A trust write that finds no row to insert or update (an admin revocation deleted the row inside
+// this login's window) costs the browser its trust, not the login: the flow finishes without the
+// trust cookie. Any other persist failure still fails the flow (ErrorsWhenPersistFails).
+func TestIssueTrustDeviceCookie_Execute_FinishesWithoutTrustWhenNoRowWasWritten(t *testing.T) {
+	persister := &fakeTrustedDevicePersister{createErr: fmt.Errorf("failed to store trustedDevice: %w", persistence.ErrTrustedDeviceNotWritten)}
+	deps, rec := trustDeps("always", 168*time.Hour, persister, "")
+	ctx := newIssueCookieCtx(deps)
+	require.NoError(t, ctx.Stash().Set(shared.StashPathUserID, uuid.Must(uuid.NewV4()).String()))
+
+	var err error
+	logs := captureWarnLogs(t, func() { err = IssueTrustDeviceCookie{}.Execute(ctx) })
+
+	require.NoError(t, err)
+	assert.Empty(t, writtenCookies(rec), "no trust cookie may point at a row that was not written")
+	assert.Contains(t, logs, "no trust row was written")
+}
