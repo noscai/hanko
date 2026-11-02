@@ -6,6 +6,9 @@ import (
 	"github.com/gofrs/uuid"
 )
 
+// All eight (isGlobalFallback, tenant present, keepUsersGlobal) combinations. Only a global-fallback
+// hit with a tenant and adoption allowed adopts. The callers dereference the tenant when this
+// returns true, so a true without a tenant (fallback, no tenant, keep) would panic.
 func TestShouldAdoptUserToTenant(t *testing.T) {
 	tenantID := uuid.Must(uuid.NewV4())
 
@@ -16,34 +19,14 @@ func TestShouldAdoptUserToTenant(t *testing.T) {
 		keepUsersGlobal  bool
 		want             bool
 	}{
-		{
-			name:             "global fallback with tenant, adoption enabled -> adopt (legacy behaviour)",
-			isGlobalFallback: true,
-			tenantID:         &tenantID,
-			keepUsersGlobal:  false,
-			want:             true,
-		},
-		{
-			name:             "global fallback with tenant, keep-global -> do NOT adopt (org-switch)",
-			isGlobalFallback: true,
-			tenantID:         &tenantID,
-			keepUsersGlobal:  true,
-			want:             false,
-		},
-		{
-			name:             "tenant-scoped hit (not global fallback) -> never adopt",
-			isGlobalFallback: false,
-			tenantID:         &tenantID,
-			keepUsersGlobal:  false,
-			want:             false,
-		},
-		{
-			name:             "no tenant context -> never adopt",
-			isGlobalFallback: true,
-			tenantID:         nil,
-			keepUsersGlobal:  false,
-			want:             false,
-		},
+		{"global fallback, tenant, adoption on -> adopt (legacy behaviour)", true, &tenantID, false, true},
+		{"global fallback, tenant, keep-global -> do NOT adopt (org-switch)", true, &tenantID, true, false},
+		{"global fallback, no tenant, adoption on -> never adopt", true, nil, false, false},
+		{"global fallback, no tenant, keep-global -> never adopt", true, nil, true, false},
+		{"tenant-scoped hit, tenant, adoption on -> never adopt", false, &tenantID, false, false},
+		{"tenant-scoped hit, tenant, keep-global -> never adopt", false, &tenantID, true, false},
+		{"tenant-scoped hit, no tenant, adoption on -> never adopt", false, nil, false, false},
+		{"tenant-scoped hit, no tenant, keep-global -> never adopt", false, nil, true, false},
 	}
 
 	for _, tc := range cases {
