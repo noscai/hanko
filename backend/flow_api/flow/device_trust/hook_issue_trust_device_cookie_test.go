@@ -655,3 +655,35 @@ func TestIssueTrustDeviceCookie_Execute_ByteGuardNeverFiresUnderV2Format(t *test
 		})
 	}
 }
+
+// The trust row is written under the tenant the flow pinned when it decided trust, not under the
+// X-Tenant-ID of the request that happens to finish the flow. Written under the last request's
+// header, a flow whose code was skipped by clinic B's trust would mint clinic A's trust with no
+// second factor asked (archon#1085 6.2 #20). Covers both policies that write trust.
+func TestIssueTrustDeviceCookie_Execute_WritesTrustUnderThePinnedFlowTenant(t *testing.T) {
+	for name, policy := range map[string]string{
+		"always":         "always",
+		"prompt granted": "prompt",
+	} {
+		t.Run(name, func(t *testing.T) {
+			pinnedTenant := uuid.Must(uuid.NewV4())
+			requestTenant := uuid.Must(uuid.NewV4())
+			persister := &fakeTrustedDevicePersister{}
+			deps, rec := trustDeps(policy, 168*time.Hour, persister, "")
+			deps.TenantID = &requestTenant
+			ctx := newIssueCookieCtx(deps)
+			require.NoError(t, ctx.Stash().Set(shared.StashPathUserID, uuid.Must(uuid.NewV4()).String()))
+			require.NoError(t, ctx.Stash().Set(shared.StashPathDeviceTrustGranted, true))
+			require.NoError(t, shared.PinFlowTenantID(ctx.Stash(), &pinnedTenant))
+
+			err := IssueTrustDeviceCookie{}.Execute(ctx)
+
+			require.NoError(t, err)
+			requireSingleDeviceCookie(t, rec)
+			require.Len(t, persister.created, 1)
+			require.NotNil(t, persister.created[0].TenantID)
+			assert.Equal(t, pinnedTenant, *persister.created[0].TenantID,
+				"the trust row must name the flow's pinned tenant, not the finishing request's X-Tenant-ID")
+		})
+	}
+}
