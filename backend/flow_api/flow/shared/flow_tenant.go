@@ -3,6 +3,7 @@ package shared
 import (
 	"github.com/gofrs/uuid"
 
+	"github.com/teamhanko/hanko/backend/v2/flow_api/services"
 	"github.com/teamhanko/hanko/backend/v2/flowpilot/jsonmanager"
 )
 
@@ -40,4 +41,16 @@ func PinFlowTenantID(stash jsonmanager.JSONManager, tenantID *uuid.UUID) error {
 	}
 
 	return stash.Set(StashPathFlowTenantID, value)
+}
+
+// FlowDeviceTrustService is the device-trust service for this flow: trust is checked and written
+// under the flow tenant (FlowTenantID). Every hook builds it here, so none can forget the tenant:
+// a zero TenantID means "tenantless flow" and matches legacy rows, it does not fail closed.
+func FlowDeviceTrustService(stash jsonmanager.ReadJSONManager, deps *Dependencies) services.DeviceTrustService {
+	return services.DeviceTrustService{
+		Persister:   deps.Persister.GetTrustedDevicePersisterWithConnection(deps.Tx),
+		Cfg:         deps.Cfg,
+		HttpContext: deps.HttpContext,
+		TenantID:    FlowTenantID(stash, deps.TenantID),
+	}
 }

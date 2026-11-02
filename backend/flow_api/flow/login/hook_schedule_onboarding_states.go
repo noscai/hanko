@@ -5,7 +5,6 @@ import (
 	"github.com/gofrs/uuid"
 	"github.com/teamhanko/hanko/backend/v2/flow_api/flow/device_trust"
 	"github.com/teamhanko/hanko/backend/v2/flow_api/flow/shared"
-	"github.com/teamhanko/hanko/backend/v2/flow_api/services"
 	"github.com/teamhanko/hanko/backend/v2/flowpilot"
 )
 
@@ -92,12 +91,7 @@ func (h ScheduleOnboardingStates) determineMFAUsageStates(c flowpilot.HookExecut
 		return result
 	}
 
-	deviceTrustService := services.DeviceTrustService{
-		Persister:   deps.Persister.GetTrustedDevicePersisterWithConnection(deps.Tx),
-		Cfg:         deps.Cfg,
-		HttpContext: deps.HttpContext,
-		TenantID:    shared.FlowTenantID(c.Stash(), deps.TenantID),
-	}
+	deviceTrustService := shared.FlowDeviceTrustService(c.Stash(), deps)
 
 	userID := uuid.FromStringOrNil(c.Stash().Get(shared.StashPathUserID).String())
 

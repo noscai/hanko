@@ -68,12 +68,7 @@ func (h IssueTrustDeviceCookie) Execute(c flowpilot.HookExecutionContext) error 
 		return nil
 	}
 
-	deviceTrustService := services.DeviceTrustService{
-		Persister:   deps.Persister.GetTrustedDevicePersisterWithConnection(deps.Tx),
-		Cfg:         deps.Cfg,
-		HttpContext: deps.HttpContext,
-		TenantID:    shared.FlowTenantID(c.Stash(), deps.TenantID),
-	}
+	deviceTrustService := shared.FlowDeviceTrustService(c.Stash(), deps)
 
 	deviceToken, err := resolveDeviceToken(deviceTrustService, presentedDeviceCookie(deps))
 	if err != nil {
