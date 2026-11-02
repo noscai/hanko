@@ -1,0 +1,48 @@
+MULTI_TENANT_DOCKER_GUIDE.md
+  s_72ae283317499b::t_0bc478d9aa6967 198-204
+  s_72ae283317499b::t_65cdafdface28b 187-191
+backend/flow_api/flow/login/hook_schedule_onboarding_states_test.go
+  s_72ae283317499b::t_0431302135c9b2 1-177
+backend/flow_api/flow/device_trust/hook_issue_trust_device_cookie.go
+  s_72ae283317499b::t_64d54bf6687125 75
+backend/flow_api/flow/device_trust/hook_issue_trust_device_cookie_test.go
+  s_72ae283317499b::t_a5f80bd1d09bc3 87,93
+backend/flow_api/flow/device_trust/hook_schedule_trust_device_state.go
+  s_72ae283317499b::t_eb1dfce427bdcd 34
+backend/flow_api/flow/login/hook_schedule_onboarding_states.go
+  s_72ae283317499b::t_9ade25738caabc 25-33,75
+backend/flow_api/services/device_trust.go
+  s_72ae283317499b::t_c20aca14b2ecdf 54-56,68,168-169,174-177,179,183
+backend/flow_api/services/device_trust_test.go
+  s_72ae283317499b::t_9d5d18235bc5d3 82-84,93,555-556,565,570-654
+backend/persistence/migrations/20261101235835_add_trusted_devices_tenant_id.down.fizz
+  s_72ae283317499b::t_4c8820b9aeac69 1-15
+backend/persistence/migrations/20261101235835_add_trusted_devices_tenant_id.up.fizz
+  s_72ae283317499b::t_9bc2a864f22ea6 1-30
+backend/persistence/models/trusted_device.go
+  s_72ae283317499b::t_1e5ee962ab5a8e 12-33
+backend/persistence/models/trusted_device_test.go
+  s_72ae283317499b::t_4522333557ce15 1-36
+backend/persistence/trusted_device_migration_integration_test.go
+  s_72ae283317499b::t_37a2f804af34e9 55-60,143-228
+backend/persistence/trusted_device_persister.go
+  s_72ae283317499b::t_be3975dd040c0e 17-26,38,45-54,80-98,119-126
+backend/persistence/trusted_device_persister_integration_test.go
+  s_72ae283317499b::t_9061a0fed7bd80 69,99,116,136,142,177,182,186,191,293,298,361,368-519
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dd90d71a28a012100de45103ca6534a62149b878",
+  "prompts": {},
+  "sessions": {
+    "s_72ae283317499b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "219a2835-1bf2-4ccf-97e2-ab2fb90e92f2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}
