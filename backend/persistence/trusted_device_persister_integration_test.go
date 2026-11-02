@@ -595,6 +595,40 @@ func (s *trustedDevicePersisterSuite) TestDeleteByUserID_RemovesRowsUnderEveryTe
 	s.Zero(count, "every trust row of the user must be deleted, whatever its tenant")
 }
 
+// A global user adopted on their first login under tenant A keeps the browsers they trusted: their
+// trust rows without a tenant move to A with the rest of the user, so A's next flow is not asked for
+// the code once more. Another user's rows on the same browser stay as they are.
+func (s *trustedDevicePersisterSuite) TestAdoptUserToTenant_MovesTheUsersTrustWithoutTenantToTheTenant() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	adopted := uuid.FromStringOrNil(secondUserID)
+	other := uuid.FromStringOrNil(fixtureUserID)
+	token := strings.Repeat("q", 64)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	s.Require().NoError(s.Storage.GetConnection().RawQuery(
+		"INSERT INTO tenants (id, name, slug, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+		trustTenantA, "Tenant A", "tenant-a", true, now, now,
+	).Exec())
+	_, err := s.insertTrustedDevice(token, adopted, now.Add(time.Hour))
+	s.Require().NoError(err)
+	_, err = s.insertTrustedDevice(token, other, now.Add(time.Hour))
+	s.Require().NoError(err)
+
+	s.Require().NoError(s.Storage.GetUserPersister().AdoptUserToTenant(adopted, trustTenantA))
+
+	persister := s.Storage.GetTrustedDevicePersister()
+	found, err := persister.FindValidTrust(token, adopted, &trustTenantA, now)
+	s.Require().NoError(err)
+	s.NotNil(found, "the adopted user's trust must answer the tenant they were adopted to")
+
+	found, err = persister.FindValidTrust(token, other, nil, now)
+	s.Require().NoError(err)
+	s.NotNil(found, "another user's trust on the same browser must stay without a tenant")
+}
+
 func (s *trustedDevicePersisterSuite) mustNewUUID() uuid.UUID {
 	id, err := uuid.NewV4()
 	s.Require().NoError(err)

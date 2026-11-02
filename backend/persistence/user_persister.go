@@ -217,7 +217,7 @@ func (p *userPersister) AdoptUserToTenant(userID uuid.UUID, tenantID uuid.UUID) 
 
 	// Update all related records
 	tables := []string{"emails", "usernames", "identities", "webauthn_credentials",
-		"otp_secrets", "password_credentials", "sessions"}
+		"otp_secrets", "password_credentials", "sessions", "trusted_devices"}
 	for _, table := range tables {
 		err := p.db.RawQuery(
 			fmt.Sprintf("UPDATE %s SET tenant_id = ? WHERE user_id = ? AND tenant_id IS NULL", table),
