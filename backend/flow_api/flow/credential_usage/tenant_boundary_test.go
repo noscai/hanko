@@ -205,6 +205,13 @@ func TestShouldAdoptGlobalUser(t *testing.T) {
 		adopt, _ := shouldAdoptGlobalUser(userIn(nil), "not-a-uuid", cfg)
 		assert.False(t, adopt)
 	})
+
+	t.Run("does not adopt a global user under keep_users_global", func(t *testing.T) {
+		keep := multiTenantOn()
+		keep.KeepUsersGlobal = true
+		adopt, _ := shouldAdoptGlobalUser(userIn(nil), tenantA.String(), keep)
+		assert.False(t, adopt)
+	})
 }
 
 // TestValidateTenantBoundary_FailsClosedOnPathologicalClaims is the monkey/fuzz pass over the

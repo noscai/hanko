@@ -85,7 +85,7 @@ func shouldAdoptGlobalUser(
 	claimsTenantID string,
 	cfg config.MultiTenant,
 ) (bool, uuid.UUID) {
-	if !cfg.Enabled || cfg.KeepUsersGlobal || user.TenantID != nil {
+	if !cfg.Enabled {
 		return false, uuid.Nil
 	}
 
@@ -94,7 +94,7 @@ func shouldAdoptGlobalUser(
 		return false, uuid.Nil
 	}
 
-	return true, tenant
+	return shouldAdoptUserToTenant(user.TenantID == nil, &tenant, cfg.KeepUsersGlobal), tenant
 }
 
 // serviceTokenFlowTenant returns the tenant a pre-authenticated flow runs under: the one the
@@ -106,6 +106,11 @@ func shouldAdoptGlobalUser(
 // X-Tenant-ID, so without the pin the flow ran under no tenant: device trust from a legacy row
 // skipped the second factor, and the session named no clinic. Pinning to the claim also covers a
 // tenant-bound user's flow sent without the header, whose claim is their own tenant.
+//
+// A header-less pre-authenticated flow's tenant therefore comes from clinic-os's signed claim
+// alone: unlike a header, it never passes the tenant middleware, so Hanko does not check that the
+// tenant exists or that tenant.enabled is set. clinic-os refuses suspended tenants itself, and the
+// same flow skipped the middleware's gate before (it ran with no tenant).
 func serviceTokenFlowTenant(claims *ServiceTokenClaims, cfg config.MultiTenant) *uuid.UUID {
 	if !cfg.Enabled {
 		return nil
