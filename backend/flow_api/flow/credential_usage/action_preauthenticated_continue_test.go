@@ -1,6 +1,8 @@
 package credential_usage
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -298,6 +300,58 @@ func TestPreAuthenticatedContinue_Execute_KeptGlobalUserRefusedUnderAnotherTenan
 	assert.False(t, ctx.Stash().Get(shared.StashPathFlowTenantID).Exists(),
 		"a refused flow must not be pinned to any tenant")
 	assert.False(t, ctx.Stash().Get(shared.StashPathUserID).Exists())
+}
+
+// On a single-tenant deployment the boundary is inert and no request carries a tenant, so the
+// token's tenant claim must not become the flow's tenant either: the flow is pinned to none.
+func TestPreAuthenticatedContinue_Execute_PinsNoTenantWhenMultiTenantIsOff(t *testing.T) {
+	deps, _ := preAuthDeps(&models.User{ID: userID, TenantID: nil})
+	deps.TenantID = nil
+	deps.Cfg.MultiTenant = multiTenantOff()
+	token := mintToken(t, testSecret, testIssuer, userID.String(), tenantB.String(), time.Hour)
+	ctx := newPreAuthCtx(token, deps)
+
+	err := PreAuthenticatedContinue{}.Execute(ctx)
+
+	require.NoError(t, err)
+	require.True(t, ctx.continued)
+	require.True(t, ctx.Stash().Get(shared.StashPathFlowTenantID).Exists(), "the flow must be pinned")
+	assert.Nil(t, shared.FlowTenantID(ctx.Stash(), &tenantA), "pinned to no tenant, so no later header adds one")
+}
+
+// failingLimiterStore is a rate-limit backend that is down.
+type failingLimiterStore struct{}
+
+func (failingLimiterStore) Take(context.Context, string) (uint64, uint64, uint64, bool, error) {
+	return 0, 0, 0, false, errors.New("limiter backend unreachable")
+}
+func (failingLimiterStore) Get(context.Context, string) (uint64, uint64, error) {
+	return 0, 0, errors.New("limiter backend unreachable")
+}
+func (failingLimiterStore) Set(context.Context, string, uint64, time.Duration) error {
+	return errors.New("limiter backend unreachable")
+}
+func (failingLimiterStore) Burst(context.Context, string, uint64) error {
+	return errors.New("limiter backend unreachable")
+}
+func (failingLimiterStore) Close(context.Context) error { return nil }
+
+// A rate limiter that cannot answer must fail the request closed: the service token is never
+// checked and nothing is seeded, rather than the limit being skipped.
+func TestPreAuthenticatedContinue_Execute_FailsClosedWhenTheRateLimiterErrors(t *testing.T) {
+	deps, users := preAuthDeps(&models.User{ID: userID, TenantID: &tenantA})
+	deps.Cfg.RateLimiter.Enabled = true
+	deps.ServiceTokenRateLimiter = failingLimiterStore{}
+	token := mintToken(t, testSecret, testIssuer, userID.String(), tenantA.String(), time.Hour)
+	ctx := newPreAuthCtx(token, deps)
+
+	err := PreAuthenticatedContinue{}.Execute(ctx)
+
+	require.ErrorContains(t, err, "rate limiter failed")
+	assert.False(t, ctx.continued)
+	assert.False(t, ctx.Stash().Get(shared.StashPathUserID).Exists(), "nothing may be seeded")
+	assert.False(t, ctx.Stash().Get(shared.StashPathFlowTenantID).Exists(), "no tenant may be pinned")
+	assert.Zero(t, users.adoptCalls)
 }
 
 func TestPreAuthenticatedContinue_Metadata(t *testing.T) {
