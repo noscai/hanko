@@ -1,0 +1,23 @@
+backend/persistence/trusted_device_persister.go
+  s_72ae283317499b::t_c85caaf6c9c7f6 77-78
+backend/persistence/trusted_device_persister_integration_test.go
+  s_72ae283317499b::t_dffc1f6cc29846 18,633-686
+backend/persistence/trusted_device_persister_test.go
+  s_72ae283317499b::t_0100e39b495873 16-21,39,77-79,170-176,178,180-183,186-189,191,193-200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b51ca8c3b94c3cd95975fdbf3dacaf788e146204",
+  "prompts": {},
+  "sessions": {
+    "s_72ae283317499b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "219a2835-1bf2-4ccf-97e2-ab2fb90e92f2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}
