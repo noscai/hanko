@@ -200,7 +200,9 @@ flow trusted it and skips the second factor only in that tenant's flows, so one 
 separate trust per clinic on the same browser. A flow's tenant is fixed once the user is
 identified: a later request with another `X-Tenant-ID` does not move it. Rows without a tenant
 answer only flows without one; the migration gives existing rows of tenant-bound users their
-user's tenant. Rolling back needs that migration run down together with the image revert.
+user's tenant. Until every pod runs the new image, logins on old pods that end by trusting the
+browser fail at that step (a retry succeeds), so roll it out quickly. Rolling back needs that
+migration run down together with the image revert.
 
 ### Verify Migration Success
 

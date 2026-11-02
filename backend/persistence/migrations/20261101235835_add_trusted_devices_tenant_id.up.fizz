@@ -26,5 +26,11 @@ sql("DROP INDEX IF EXISTS trusted_devices_token_user_idx")
 # user_id), which only the dropped index can arbitrate; against this schema every trust write of the
 # previous image fails. Revert the image and run this migration down together.
 #
+# The same holds during the rollout: from the moment this runs (in the first new pod's
+# initContainer) until the last pod of the previous image is gone, a login served by an old pod that
+# ends by trusting the browser fails at that step, and succeeds when retried on a new pod. Trust
+# reads on old pods keep working. Keeping the old index instead would forbid the second clinic's row
+# for the same browser and user, which is what this migration is for.
+#
 # Comments must stay BELOW the sql() calls: .fizz is run through plush.RunScript, and a leading
 # comment corrupts the token stream ("no prefix parse function for ) found").
