@@ -64,6 +64,22 @@ func (s *trustedDeviceMigrationSuite) SetupSuite() {
 // satisfy trusted_devices.user_id's FK to users.id.
 const fixtureUserID = "b5dd5267-b462-48be-b70d-bcd6f1bbe7a5"
 
+func (s *trustedDeviceMigrationSuite) TestTenantMigration_RefusesNonemptyTableWithoutMaintenanceAcknowledgement() {
+	if testing.Short() {
+		s.T().Skip("requires disposable PostgreSQL")
+	}
+	s.Require().NoError(s.Storage.MigrateDown(2))
+	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
+	_, err := s.insertTrustedDevice(strings.Repeat("m", 64), uuid.FromStringOrNil(fixtureUserID), time.Now().UTC().Add(time.Hour))
+	s.Require().NoError(err)
+	unacknowledged, err := persistence.New(config.Database{Url: s.DB.DatabaseUrl})
+	s.Require().NoError(err)
+	defer unacknowledged.GetConnection().Close()
+	err = unacknowledged.MigrateUp()
+	s.Require().ErrorContains(err, "Drain Hanko login traffic")
+	s.Require().NoError(s.Storage.MigrateUp(), "explicit maintenance acknowledgement permits the same migration")
+}
+
 func (s *trustedDeviceMigrationSuite) TestMigration_DedupesTrustedDevicesBeforeCreatingUniqueIndex() {
 	if testing.Short() {
 		s.T().Skip("skipping test in short mode.")

@@ -61,6 +61,7 @@ func TestParseKeepUsersGlobalConfig(t *testing.T) {
 	t.Setenv("MULTI_TENANT_ENABLED", "true")
 	t.Setenv("MULTI_TENANT_ALLOW_GLOBAL_USERS", "true")
 	t.Setenv("MULTI_TENANT_KEEP_USERS_GLOBAL", "true")
+	require.NoError(t, os.Unsetenv("MULTI_TENANT_KEEP_USERS_GLOBAL"))
 	configPath := "./multi-tenant-keep-users-global-config.yaml"
 	cfg, err := Load(&configPath)
 	require.NoError(t, err)
