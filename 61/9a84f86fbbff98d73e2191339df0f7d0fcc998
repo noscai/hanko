@@ -1,0 +1,19 @@
+MULTI_TENANT_DOCKER_GUIDE.md
+  s_32fcc69a51093a::t_c5394657b03361 5-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "619a84f86fbbff98d73e2191339df0f7d0fcc998",
+  "prompts": {},
+  "sessions": {
+    "s_32fcc69a51093a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19f0f-6e83-7b21-8dbb-6ef161839480",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}
