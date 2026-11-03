@@ -246,6 +246,8 @@ func TestContinueWithLoginIdentifier_Execute_EmailGlobalKeptGlobal(t *testing.T)
 	deps, p, _, _ := loginDeps()
 	deps.Cfg = loginIdentifierCfg()
 	deps.Cfg.MultiTenant.KeepUsersGlobal = true
+	deps.Cfg.MultiTenant.AllowGlobalUsers = true
+	deps.Cfg.MultiTenant.Enabled = true
 	p.emails.email = &models.Email{UserID: &userID, Address: "user@example.com"}
 	p.emails.isGlobal = true
 	p.users.user = userWithPrimaryEmail(userID, "user@example.com")
@@ -347,6 +349,8 @@ func TestContinueWithLoginIdentifier_Execute_UsernameGlobalKeptGlobal(t *testing
 	deps, p, _, _ := loginDeps()
 	deps.Cfg = loginIdentifierCfg()
 	deps.Cfg.MultiTenant.KeepUsersGlobal = true
+	deps.Cfg.MultiTenant.AllowGlobalUsers = true
+	deps.Cfg.MultiTenant.Enabled = true
 	p.usernames.username = &models.Username{UserId: userID, Username: "alice"}
 	p.usernames.isGlobal = true
 	p.users.user = &models.User{ID: userID}

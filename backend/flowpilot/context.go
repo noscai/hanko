@@ -22,6 +22,7 @@ type flowContext interface {
 	Set(string, interface{})
 	// GetFlowID returns the unique ID of the current defaultFlow.
 	GetFlowID() uuid.UUID
+	GetFlowCreatedAt() time.Time
 	// Payload returns the JSONManager for accessing payload data.
 	Payload() payload
 	// Stash returns the JSONManager for accessing stash data.

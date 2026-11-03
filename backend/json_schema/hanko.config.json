@@ -872,8 +872,14 @@
         "properties": {
           "allow_global_users": {
             "const": true
+          },
+          "enabled": {
+            "const": true
           }
-        }
+        },
+        "required": [
+          "enabled"
+        ]
       },
       "properties": {
         "enabled": {
@@ -898,7 +904,7 @@
         },
         "keep_users_global": {
           "type": "boolean",
-          "description": "KeepUsersGlobal keeps a global user global on login instead of adopting them\nto the first tenant they authenticate against. When true, a user found via the\nglobal fallback (tenant_id IS NULL) is NOT bound to the login tenant, so the same\nidentity can authenticate against every tenant it is a member of — the prerequisite\nfor the ClinicOS in-app organisation switcher (archon#1085 task 16). Which clinics a person\nbelongs to is then decided by ClinicOS (its user rows that share this Hanko user), not by\nHanko's single user.tenant_id. This covers the pre-authenticated path too.\nIt only stops the adoption of users who are already global: registration under a tenant\nheader still creates a tenant-bound user, and users adopted before it was turned on stay\nadopted. Requires allow_global_users to be true. Environment variable:\nMULTI_TENANT_KEEP_USERS_GLOBAL.\nDo not enable it on a cluster before archon#1085 task 17 runs on that cluster's Hanko: until\nthen a kept-global user's session JWT carries no tenant_id.\nWhen false (default), the historical single-tenant adoption behaviour is preserved.",
+          "description": "KeepUsersGlobal keeps a global user global on login instead of adopting them\nto the first tenant they authenticate against. When true, a user found via the\nglobal fallback (tenant_id IS NULL) is NOT bound to the login tenant, so the same\nidentity can authenticate against every tenant it is a member of — the prerequisite\nfor the ClinicOS in-app organisation switcher (archon#1085 task 16). Which clinics a person\nbelongs to is then decided by ClinicOS (its user rows that share this Hanko user), not by\nHanko's single user.tenant_id. This covers the pre-authenticated path too.\nNew registration identities and their credentials are also global. The request tenant\nstill scopes the authentication flow and session proof. Before enabling, collision-check\nand un-adopt all existing tenant-bound identities (archon#1085 Q21/task 34).\nRequires allow_global_users to be true. Environment variable:\nMULTI_TENANT_KEEP_USERS_GLOBAL.\nDo not enable it on a cluster before archon#1085 task 17 runs on that cluster's Hanko: until\nthen a kept-global user's session JWT carries no tenant_id.\nWhen false (default), the historical single-tenant adoption behaviour is preserved.",
           "default": false
         }
       },

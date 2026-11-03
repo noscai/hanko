@@ -130,6 +130,19 @@ func newIssueCookieCtx(deps *shared.Dependencies) *fakeIssueCookieCtx {
 	return &fakeIssueCookieCtx{HookExecutionContext: backing, deps: deps}
 }
 
+func TestIssueTrustDeviceCookie_TenantlessGlobalFlowWritesNothing(t *testing.T) {
+	p := &fakeTrustedDevicePersister{}
+	deps, rec := trustDeps("always", time.Hour, p, "")
+	deps.Cfg.MultiTenant.Enabled = true
+	deps.Cfg.MultiTenant.AllowGlobalUsers = true
+	deps.Cfg.MultiTenant.KeepUsersGlobal = true
+	c := newIssueCookieCtx(deps)
+	require.NoError(t, c.Stash().Set(shared.StashPathUserID, uuid.Must(uuid.NewV4()).String()))
+	require.NoError(t, (IssueTrustDeviceCookie{}).Execute(c))
+	assert.Empty(t, p.created)
+	assert.Empty(t, writtenCookies(rec))
+}
+
 func trustDeps(policy string, duration time.Duration, persister persistence.TrustedDevicePersister, legacyCookie string) (*shared.Dependencies, *httptest.ResponseRecorder) {
 	return trustDepsWithCookies(policy, duration, persister, legacyCookie, "")
 }

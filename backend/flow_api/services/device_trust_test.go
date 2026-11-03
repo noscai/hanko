@@ -799,14 +799,20 @@ func TestCheckDeviceTrust_KeptGlobalUsersTenantlessFlowIsNeverTrusted(t *testing
 
 	kept := newServiceUnderTenant(t, p, cookie, nil)
 	kept.Cfg.MultiTenant.KeepUsersGlobal = true
+	kept.Cfg.MultiTenant.AllowGlobalUsers = true
+	kept.Cfg.MultiTenant.Enabled = true
 	assert.False(t, kept.CheckDeviceTrust(user), "flag on: a tenantless flow always asks for the second factor")
 
 	off := newServiceUnderTenant(t, p, cookie, nil)
 	off.Cfg.MultiTenant.KeepUsersGlobal = false
+	off.Cfg.MultiTenant.AllowGlobalUsers = true
+	off.Cfg.MultiTenant.Enabled = true
 	assert.True(t, off.CheckDeviceTrust(user), "flag off: a tenantless flow keeps its legacy trust")
 
 	underTenant := newServiceUnderTenant(t, p, cookie, &trustTenantA)
 	underTenant.Cfg.MultiTenant.KeepUsersGlobal = true
+	underTenant.Cfg.MultiTenant.AllowGlobalUsers = true
+	underTenant.Cfg.MultiTenant.Enabled = true
 	require.NoError(t, underTenant.CreateTrustedDevice(user, tok))
 	assert.True(t, underTenant.CheckDeviceTrust(user), "flag on: a flow under a tenant is answered by that tenant's trust")
 }

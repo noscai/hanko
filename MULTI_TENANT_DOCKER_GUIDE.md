@@ -179,10 +179,18 @@ This ensures seamless migration without requiring users to re-register.
 Adoption is skipped when `keep_users_global: true`: the user found via the global fallback stays
 global (`tenant_id = NULL`) and logs in to every tenant they belong to with the same identity. Users
 adopted before the option was turned on stay adopted (un-adopting them is a separate data
-migration), and registration under an `X-Tenant-ID` header still creates a tenant-bound user.
+migration). Fresh registrations and their credentials are also global; the request tenant
+still scopes the flow and session proof.
 
 > **Do not enable `keep_users_global` on a running deployment without its rollout.** Two things
 > must come first:
+> 0. **Drain login traffic before the tenant-trust migration.** Its column addition holds
+>    an exclusive table lock through the backfill and indexes. A nonempty table refuses
+>    migration without explicit maintenance acknowledgement: add PostgreSQL connection
+>    option `-c hanko.trusted_device_maintenance=on` to the migration job's database URL
+>    only after draining all public Hanko replicas. Keep them drained until the job
+>    commits; remove the option afterward. Lock waits are limited to five seconds and
+>    each statement to thirty seconds. Fresh empty databases need no acknowledgement.
 > 1. **Sessions must carry the flow tenant.** A kept-global user has no `tenant_id`, so their
 >    session JWT names the flow's tenant instead: the `X-Tenant-ID` the flow ran under, or, for a
 >    pre-authenticated flow, the tenant its service token names. A relying party that checks the

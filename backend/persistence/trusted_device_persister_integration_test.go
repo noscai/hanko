@@ -633,8 +633,7 @@ func (s *trustedDevicePersisterSuite) TestAdoptUserToTenant_MovesTheUsersTrustWi
 // Two logins of the same user on the same browser and tenant race. The first holds its new row
 // uncommitted while the second writes: the second's insert waits on the unique index, finds the
 // row once the first commits, and must refresh it rather than fail or add a second row. Whether the
-// second write reaches its insert before the commit depends on scheduling; the end state asserted
-// is the same either way.
+// second writer is observed waiting in PostgreSQL before the first commits.
 func (s *trustedDevicePersisterSuite) TestCreate_ConcurrentTrustOfTheSameTenantIsRefreshed() {
 	if testing.Short() {
 		s.T().Skip("skipping test in short mode.")
@@ -660,6 +659,13 @@ func (s *trustedDevicePersisterSuite) TestCreate_ConcurrentTrustOfTheSameTenantI
 	second, err := s.Storage.GetConnection().NewTransaction()
 	s.Require().NoError(err)
 
+	defer first.TX.Rollback()
+	defer second.TX.Rollback()
+	var backend struct {
+		PID int `db:"pid"`
+	}
+	s.Require().NoError(second.RawQuery("SELECT pg_backend_pid() AS pid").First(&backend))
+
 	firstRow := row(time.Hour)
 	s.Require().NoError(persistence.NewTrustedDevicePersister(first).Create(firstRow))
 
@@ -667,10 +673,21 @@ func (s *trustedDevicePersisterSuite) TestCreate_ConcurrentTrustOfTheSameTenantI
 	go func() {
 		secondDone <- persistence.NewTrustedDevicePersister(second).Create(row(7 * time.Hour))
 	}()
-	time.Sleep(200 * time.Millisecond)
+	s.Require().Eventually(func() bool {
+		var state struct {
+			Blocked bool `db:"blocked"`
+		}
+		err := s.Storage.GetConnection().RawQuery("SELECT cardinality(pg_blocking_pids(?)) > 0 AS blocked", backend.PID).First(&state)
+		return err == nil && state.Blocked
+	}, 5*time.Second, 10*time.Millisecond, "the second writer must be waiting on the first transaction")
 	s.Require().NoError(first.TX.Commit())
 
-	s.Require().NoError(<-secondDone, "the second login must refresh the row, not fail")
+	select {
+	case err := <-secondDone:
+		s.Require().NoError(err, "the second login must refresh the row, not fail")
+	case <-time.After(5 * time.Second):
+		s.T().Fatal("concurrent trust writer did not finish")
+	}
 	s.Require().NoError(second.TX.Commit())
 
 	var rows []models.TrustedDevice
@@ -688,6 +705,49 @@ func (s *trustedDevicePersisterSuite) mustNewUUID() uuid.UUID {
 	id, err := uuid.NewV4()
 	s.Require().NoError(err)
 	return id
+}
+
+func (s *trustedDevicePersisterSuite) TestRevocationRefusesTrustFromAnOlderFlow() {
+	if testing.Short() {
+		s.T().Skip("requires disposable PostgreSQL")
+	}
+	userID := uuid.FromStringOrNil(fixtureUserID)
+	p := s.Storage.GetTrustedDevicePersister()
+	started := time.Now().UTC().Add(-time.Second)
+	s.Require().NoError(p.DeleteByUserID(userID))
+	row := models.TrustedDevice{ID: s.mustNewUUID(), UserID: userID, TenantID: &trustTenantA, DeviceToken: strings.Repeat("v", 64), CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(time.Hour), AuthenticatedAt: started}
+	s.Require().ErrorIs(p.Create(row), persistence.ErrTrustedDeviceNotWritten)
+	found, err := p.FindValidTrust(row.DeviceToken, userID, &trustTenantA, time.Now().UTC())
+	s.Require().NoError(err)
+	s.Nil(found)
+	row.AuthenticatedAt = time.Now().UTC().Add(time.Millisecond)
+	s.Require().NoError(p.Create(row), "a new flow after reset may trust the browser again")
+}
+
+func (s *trustedDevicePersisterSuite) TestAdoptionMergesGlobalAndTargetTrustWithoutExtendingExpiry() {
+	if testing.Short() {
+		s.T().Skip("requires disposable PostgreSQL")
+	}
+	db := s.Storage.GetConnection()
+	s.Require().NoError(db.RawQuery("DROP INDEX trusted_devices_token_user_idx").Exec())
+	now := time.Now().UTC()
+	s.Require().NoError(db.RawQuery("INSERT INTO tenants (id, name, slug, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", trustTenantA, "Tenant A", "tenant-a", true, now, now).Exec())
+	userID := uuid.FromStringOrNil(fixtureUserID)
+	token := strings.Repeat("w", 64)
+	p := s.Storage.GetTrustedDevicePersister()
+	global := models.TrustedDevice{ID: s.mustNewUUID(), UserID: userID, DeviceToken: token, CreatedAt: now, UpdatedAt: now, ExpiresAt: now.Add(7 * time.Hour)}
+	s.Require().NoError(p.Create(global))
+	target := global
+	target.ID = s.mustNewUUID()
+	target.TenantID = &trustTenantA
+	target.ExpiresAt = now.Add(time.Hour)
+	s.Require().NoError(p.Create(target))
+	s.Require().NoError(s.Storage.GetUserPersister().AdoptUserToTenant(userID, trustTenantA))
+	var rows []models.TrustedDevice
+	s.Require().NoError(db.Where("user_id = ? AND device_token = ?", userID, token).All(&rows))
+	s.Require().Len(rows, 1)
+	s.Equal(target.ID, rows[0].ID)
+	s.WithinDuration(target.ExpiresAt, rows[0].ExpiresAt, time.Millisecond)
 }
 
 // insertTrustedDevice writes a row directly via raw SQL, bypassing the persister entirely, so

@@ -250,6 +250,7 @@ func TestResolveServiceTokenUser_RefusesWhenTheAdoptedUserCannotBeReRead(t *test
 // tenant rather than a wrong one when the claim cannot be a tenant, and pins none at all on a
 // single-tenant deployment, where no request carries a tenant either.
 func TestServiceTokenFlowTenant(t *testing.T) {
+	assert.Nil(t, serviceTokenFlowTenant(claimsFor(userID, uuid.Nil.String()), multiTenantOn()), "the nil UUID is not a tenant")
 	claims := claimsFor(userID, tenantB.String())
 	assert.Equal(t, &tenantB, serviceTokenFlowTenant(claims, multiTenantOn()))
 	assert.Nil(t, serviceTokenFlowTenant(claims, multiTenantOff()), "a single-tenant deployment pins no tenant")

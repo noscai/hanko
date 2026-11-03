@@ -9,13 +9,14 @@ import (
 )
 
 type TrustedDevice struct {
-	ID          uuid.UUID  `db:"id"`
-	UserID      uuid.UUID  `db:"user_id"`
-	TenantID    *uuid.UUID `db:"tenant_id"`
-	DeviceToken string     `db:"device_token"`
-	ExpiresAt   time.Time  `db:"expires_at"`
-	CreatedAt   time.Time  `db:"created_at"`
-	UpdatedAt   time.Time  `db:"updated_at"`
+	AuthenticatedAt time.Time  `db:"-" json:"-"`
+	ID              uuid.UUID  `db:"id"`
+	UserID          uuid.UUID  `db:"user_id"`
+	TenantID        *uuid.UUID `db:"tenant_id"`
+	DeviceToken     string     `db:"device_token"`
+	ExpiresAt       time.Time  `db:"expires_at"`
+	CreatedAt       time.Time  `db:"created_at"`
+	UpdatedAt       time.Time  `db:"updated_at"`
 }
 
 // MatchesTenant reports whether this trust may skip the second factor in a flow that runs under

@@ -1,0 +1,2 @@
+sql("SET LOCAL lock_timeout = '5s'")
+sql("DROP TABLE trusted_device_revocations")

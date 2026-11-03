@@ -8,12 +8,15 @@ package persistence_test
 // test needs are unexported, so the external package works without issue.
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gofrs/uuid"
 	"github.com/stretchr/testify/suite"
+	"github.com/teamhanko/hanko/backend/v2/config"
+	"github.com/teamhanko/hanko/backend/v2/persistence"
 	"github.com/teamhanko/hanko/backend/v2/persistence/models"
 	"github.com/teamhanko/hanko/backend/v2/test"
 )
@@ -40,6 +43,23 @@ type trustedDeviceMigrationSuite struct {
 	test.Suite
 }
 
+func (s *trustedDeviceMigrationSuite) SetupSuite() {
+	s.Suite.SetupSuite()
+	if testing.Short() {
+		return
+	}
+	// These disposable databases have no serving login replicas. Acknowledge
+	// maintenance explicitly when reapplying migrations to seeded tables.
+	u, err := url.Parse(s.DB.DatabaseUrl)
+	s.Require().NoError(err)
+	q := u.Query()
+	q.Set("options", "-c hanko.trusted_device_maintenance=on")
+	u.RawQuery = q.Encode()
+	s.Require().NoError(s.Storage.GetConnection().Close())
+	s.Storage, err = persistence.New(config.Database{Url: u.String()})
+	s.Require().NoError(err)
+}
+
 // fixtureUserID matches test/fixtures/user/users.yaml, loaded below to
 // satisfy trusted_devices.user_id's FK to users.id.
 const fixtureUserID = "b5dd5267-b462-48be-b70d-bcd6f1bbe7a5"
@@ -57,7 +77,7 @@ func (s *trustedDeviceMigrationSuite) TestMigration_DedupesTrustedDevicesBeforeC
 	// 20261101235835_add_trusted_devices_tenant_id runs after it and leaves
 	// this index in place; rolling back both returns the table to the
 	// schema this migration first ran against.
-	s.Require().NoError(s.Storage.MigrateDown(2))
+	s.Require().NoError(s.Storage.MigrateDown(3))
 
 	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
 
@@ -150,7 +170,7 @@ func (s *trustedDeviceMigrationSuite) TestTenantMigration_BackfillsTenantBoundUs
 		s.T().Skip("skipping test in short mode.")
 	}
 
-	s.Require().NoError(s.Storage.MigrateDown(1))
+	s.Require().NoError(s.Storage.MigrateDown(2))
 	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
 
 	tenantID := uuid.FromStringOrNil("aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa")
@@ -208,7 +228,7 @@ func (s *trustedDeviceMigrationSuite) TestTenantMigration_KeepsThePairIndexAndDo
 	s.Error(insertUnder("bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb"),
 		"trusted_devices_token_user_idx must still allow one row per (device_token, user_id)")
 
-	s.Require().NoError(s.Storage.MigrateDown(1))
+	s.Require().NoError(s.Storage.MigrateDown(2))
 
 	_, err := s.insertTrustedDevice(token, userID, now.Add(48*time.Hour))
 	s.Error(err, "after the down, trusted_devices_token_user_idx must still reject a duplicate")

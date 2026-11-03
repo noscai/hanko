@@ -1,6 +1,9 @@
 package flowpilot
 
-import "github.com/teamhanko/hanko/backend/v2/flowpilot/jsonmanager"
+import (
+	"github.com/teamhanko/hanko/backend/v2/flowpilot/jsonmanager"
+	"time"
+)
 
 // mock_context.go is a ClinicOS fork addition (archon#1874 P1a). It exists so flow actions and
 // hooks can be unit-tested without a live Postgres, a FlowDB, or a fully-built flow graph.
@@ -36,8 +39,9 @@ func newMockActionExecutionContext(inputData map[string]interface{}) *defaultAct
 	}
 
 	fc := &defaultFlowContext{
-		stash:   s,
-		payload: newPayload(),
+		stash:     s,
+		payload:   newPayload(),
+		flowModel: &FlowModel{CreatedAt: time.Now().UTC()},
 	}
 
 	return &defaultActionExecutionContext{

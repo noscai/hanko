@@ -118,6 +118,8 @@ func TestPasswordLogin_Execute_EmailGlobalFallbackKeptGlobal(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			deps, p, _, _ := loginDeps()
 			deps.Cfg.MultiTenant.KeepUsersGlobal = true
+			deps.Cfg.MultiTenant.AllowGlobalUsers = true
+			deps.Cfg.MultiTenant.Enabled = true
 			p.emails.email = &models.Email{UserID: &userID, Address: "user@example.com"}
 			p.emails.isGlobal = true
 			p.users.user = &models.User{ID: userID}
@@ -179,6 +181,8 @@ func passwordLoginUnderWith(t *testing.T, deps *shared.Dependencies, tenant uuid
 func TestPasswordLogin_Execute_KeptGlobalUserLogsInUnderTenantAThenB(t *testing.T) {
 	deps, _, _, _ := loginDeps()
 	deps.Cfg.MultiTenant.KeepUsersGlobal = true
+	deps.Cfg.MultiTenant.AllowGlobalUsers = true
+	deps.Cfg.MultiTenant.Enabled = true
 	users := withGlobalUser(deps, "user@example.com")
 	withRealPasswordCheck(t, deps, userID)
 
@@ -266,6 +270,8 @@ func TestPasswordLogin_Execute_UsernameGlobalFallbackKeptGlobal(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			deps, p, _, _ := loginDeps()
 			deps.Cfg.MultiTenant.KeepUsersGlobal = true
+			deps.Cfg.MultiTenant.AllowGlobalUsers = true
+			deps.Cfg.MultiTenant.Enabled = true
 			p.usernames.username = &models.Username{UserId: userID, Username: "alice"}
 			p.usernames.isGlobal = true
 			p.users.user = &models.User{ID: userID}

@@ -209,6 +209,20 @@ func (p *userPersister) Delete(user models.User) error {
 // AdoptUserToTenant updates a user and all related records to belong to a tenant.
 // This migrates a global user (tenant_id = NULL) to a specific tenant.
 func (p *userPersister) AdoptUserToTenant(userID uuid.UUID, tenantID uuid.UUID) error {
+	return (&trustedDevicePersister{db: p.db}).withUserLock(userID, func(tx *pop.Connection) error {
+		return (&userPersister{db: tx}).adoptUserToTenant(userID, tenantID)
+	})
+}
+
+func (p *userPersister) adoptUserToTenant(userID uuid.UUID, tenantID uuid.UUID) error {
+	// A global and target-clinic row can coexist after the pair index is removed.
+	// Remove the global duplicate before assigning its tenant; keep only the
+	// target row and never extend its expiry during adoption.
+	if err := p.db.RawQuery(`DELETE FROM trusted_devices g USING trusted_devices t
+		WHERE g.user_id = ? AND g.tenant_id IS NULL AND t.user_id = g.user_id
+		AND t.device_token = g.device_token AND t.tenant_id = ?`, userID, tenantID).Exec(); err != nil {
+		return fmt.Errorf("failed to merge trusted devices during adoption: %w", err)
+	}
 	// Update user
 	err := p.db.RawQuery("UPDATE users SET tenant_id = ? WHERE id = ? AND tenant_id IS NULL", tenantID, userID).Exec()
 	if err != nil {

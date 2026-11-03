@@ -51,7 +51,16 @@ func TestDefaultConfigKeepUsersGlobal(t *testing.T) {
 	assert.False(t, cfg.MultiTenant.KeepUsersGlobal, "adoption stays on unless a deployment opts out")
 }
 
+func TestMultiTenantConfig_RefusesKeepUsersGlobalInSingleTenantMode(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.MultiTenant.KeepUsersGlobal = true
+	require.ErrorContains(t, cfg.Validate(), "requires multi_tenant.enabled")
+}
+
 func TestParseKeepUsersGlobalConfig(t *testing.T) {
+	t.Setenv("MULTI_TENANT_ENABLED", "true")
+	t.Setenv("MULTI_TENANT_ALLOW_GLOBAL_USERS", "true")
+	t.Setenv("MULTI_TENANT_KEEP_USERS_GLOBAL", "true")
 	configPath := "./multi-tenant-keep-users-global-config.yaml"
 	cfg, err := Load(&configPath)
 	require.NoError(t, err)
@@ -60,6 +69,8 @@ func TestParseKeepUsersGlobalConfig(t *testing.T) {
 }
 
 func TestKeepUsersGlobalFromEnvironment(t *testing.T) {
+	t.Setenv("MULTI_TENANT_ENABLED", "true")
+	t.Setenv("MULTI_TENANT_ALLOW_GLOBAL_USERS", "true")
 	t.Setenv("MULTI_TENANT_KEEP_USERS_GLOBAL", "true")
 
 	configPath := "./minimal-config.yaml"
@@ -90,9 +101,9 @@ func TestMultiTenant_JSONSchemaRequiresGlobalUsersWhenKeepingUsersGlobal(t *test
 		valid bool
 	}{
 		"keep without global users is refused":           {`{"keep_users_global": true, "allow_global_users": false}`, false},
-		"keep with global users is accepted":             {`{"keep_users_global": true, "allow_global_users": true}`, true},
+		"keep with global users is accepted":             {`{"keep_users_global": true, "allow_global_users": true, "enabled": true}`, true},
 		"no keep without global users is accepted":       {`{"keep_users_global": false, "allow_global_users": false}`, true},
-		"keep with the default global users is accepted": {`{"keep_users_global": true}`, true},
+		"keep with the default global users is accepted": {`{"keep_users_global": true, "enabled": true}`, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			result, err := schema.Validate(gojsonschema.NewStringLoader(tc.doc))

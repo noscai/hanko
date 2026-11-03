@@ -71,7 +71,35 @@ func (p *trustedDevicePersister) Create(trustedDevice models.TrustedDevice) erro
 		return fmt.Errorf("trustedDevice object validation failed: %w", vErr)
 	}
 
-	return upsertTrustedDevice(sqlTrustWriter{db: p.db}, trustedDevice)
+	return p.withUserLock(trustedDevice.UserID, func(tx *pop.Connection) error {
+		startedAt := trustedDevice.AuthenticatedAt
+		if startedAt.IsZero() {
+			startedAt = trustedDevice.CreatedAt
+		}
+		var revocations []struct {
+			RevokedAt time.Time `db:"revoked_at"`
+		}
+		if err := tx.RawQuery("SELECT revoked_at FROM trusted_device_revocations WHERE user_id = ?", trustedDevice.UserID).All(&revocations); err != nil {
+			return err
+		}
+		if len(revocations) > 0 && !startedAt.After(revocations[0].RevokedAt) {
+			return ErrTrustedDeviceNotWritten
+		}
+		return upsertTrustedDevice(sqlTrustWriter{db: tx}, trustedDevice)
+	})
+}
+
+func (p *trustedDevicePersister) withUserLock(userID uuid.UUID, work func(*pop.Connection) error) error {
+	locked := func(tx *pop.Connection) error {
+		if err := tx.RawQuery("SELECT id FROM users WHERE id = ? FOR UPDATE", userID).Exec(); err != nil {
+			return err
+		}
+		return work(tx)
+	}
+	if p.db.TX != nil {
+		return locked(p.db)
+	}
+	return p.db.Transaction(locked)
 }
 
 // trustWriter is the three statements Create is built from, so the rows Create leaves under each
@@ -183,12 +211,14 @@ func (p *trustedDevicePersister) FindValidTrust(deviceToken string, userID uuid.
 }
 
 func (p *trustedDevicePersister) DeleteByUserID(userID uuid.UUID) error {
-	err := p.db.RawQuery("DELETE FROM trusted_devices WHERE user_id = ?", userID).Exec()
-	if err != nil {
-		return fmt.Errorf("failed to delete trustedDevices of user: %w", err)
-	}
-
-	return nil
+	return p.withUserLock(userID, func(tx *pop.Connection) error {
+		if err := tx.RawQuery(`INSERT INTO trusted_device_revocations (user_id, revoked_at)
+		SELECT id, clock_timestamp() FROM users WHERE id = ?
+		ON CONFLICT (user_id) DO UPDATE SET revoked_at = EXCLUDED.revoked_at`, userID).Exec(); err != nil {
+			return err
+		}
+		return tx.RawQuery("DELETE FROM trusted_devices WHERE user_id = ?", userID).Exec()
+	})
 }
 
 func (p *trustedDevicePersister) findOne(q *pop.Query) (*models.TrustedDevice, error) {

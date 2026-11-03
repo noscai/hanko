@@ -129,15 +129,14 @@ func (a RegisterLoginIdentifier) Execute(c flowpilot.ExecutionContext) error {
 		if deps.Cfg.Email.Enabled && deps.Cfg.Email.AcquireOnRegistration {
 			// Check that email is not already taken (tenant-scoped with fallback to global users)
 			// this check is non-exhaustive as the email is not blocked here and might be created after the check here and the user creation
-			emailModel, isGlobalFallback, err := deps.Persister.GetEmailPersisterWithConnection(deps.Tx).FindByAddressWithTenantFallback(email, deps.TenantID)
+			emailModel, _, err := deps.Persister.GetEmailPersisterWithConnection(deps.Tx).FindByAddressWithTenantFallback(email, deps.TenantID)
 			if err != nil {
 				return err
 			}
 			// Do not return an error when only identifier is email and email verification is on (account enumeration protection) and privacy setting is off
-			// Note: If a global user exists, they should use the login flow (adopted unless keep_users_global)
 			if emailModel != nil {
-				// If it's a global user and we have a tenant, they log in instead (adopted unless keep_users_global)
-				_ = isGlobalFallback // Global users should use the login flow (adopted unless keep_users_global)
+				// Existing emails cannot register again. With verification enabled and existence
+				// hints disabled, passcode confirmation preserves enumeration protection.
 				// E-mail address already exists
 				if !deps.Cfg.Email.RequireVerification || deps.Cfg.Privacy.ShowAccountExistenceHints {
 					c.Input().SetError("email", shared.ErrorEmailAlreadyExists)

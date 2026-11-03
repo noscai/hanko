@@ -53,7 +53,8 @@ type DeviceTrustService struct {
 	HttpContext echo.Context
 	// TenantID is the tenant the flow runs under (shared.FlowTenantID). Trust is written under it
 	// and answers only it (archon#1085 Q15); nil is a flow without a tenant.
-	TenantID *uuid.UUID
+	TenantID        *uuid.UUID
+	AuthenticatedAt time.Time
 }
 
 func (s DeviceTrustService) CreateTrustedDevice(userID uuid.UUID, deviceToken string) error {
@@ -63,13 +64,14 @@ func (s DeviceTrustService) CreateTrustedDevice(userID uuid.UUID, deviceToken st
 	}
 
 	trustedDeviceModel := models.TrustedDevice{
-		ID:          deviceID,
-		UserID:      userID,
-		TenantID:    s.TenantID,
-		DeviceToken: deviceToken,
-		ExpiresAt:   time.Now().Add(s.Cfg.MFA.DeviceTrustDuration).UTC(),
-		CreatedAt:   time.Now().UTC(),
-		UpdatedAt:   time.Now().UTC(),
+		AuthenticatedAt: s.AuthenticatedAt,
+		ID:              deviceID,
+		UserID:          userID,
+		TenantID:        s.TenantID,
+		DeviceToken:     deviceToken,
+		ExpiresAt:       time.Now().Add(s.Cfg.MFA.DeviceTrustDuration).UTC(),
+		CreatedAt:       time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
 	}
 
 	err = s.Persister.Create(trustedDeviceModel)

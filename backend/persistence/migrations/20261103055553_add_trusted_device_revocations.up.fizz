@@ -1,0 +1,2 @@
+sql("SET LOCAL lock_timeout = '5s'")
+sql("CREATE TABLE trusted_device_revocations (user_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, revoked_at timestamptz NOT NULL)")

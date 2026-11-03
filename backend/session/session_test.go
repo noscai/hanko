@@ -250,7 +250,7 @@ func TestGenerateJWT_GlobalUserSessionNamesFlowTenant(t *testing.T) {
 	flowTenant := "bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb"
 	userTenant := "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa"
 
-	mgr, err := NewManager(&test.JwkManager{}, config.Config{Session: config.Session{Lifespan: "5m"}})
+	mgr, err := NewManager(&test.JwkManager{}, config.Config{Session: config.Session{Lifespan: "5m", JWTTemplate: &config.JWTTemplate{Claims: map[string]interface{}{"tenant_id": "stale-template-tenant"}}}})
 	require.NoError(t, err)
 
 	t.Run("a global user's session names the flow tenant", func(t *testing.T) {

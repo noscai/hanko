@@ -59,6 +59,9 @@ func DefaultMultiTenantConfig() MultiTenant {
 // tenant, and the pre-authenticated step-up refuses tenant-less users when global users are
 // disabled, so the pair would let a login succeed and then fail every step-up for that user.
 func (m *MultiTenant) Validate() error {
+	if m.KeepUsersGlobal && !m.Enabled {
+		return errors.New("keep_users_global requires multi_tenant.enabled to be true")
+	}
 	if m.KeepUsersGlobal && !m.AllowGlobalUsers {
 		return errors.New("keep_users_global requires allow_global_users to be true: users kept global have no tenant, and allow_global_users=false refuses tenant-less users")
 	}
@@ -77,9 +80,11 @@ func (MultiTenant) JSONSchemaExtend(schema *jsonschema.Schema) {
 		Required: []string{"keep_users_global"},
 	}
 	schema.Then = &jsonschema.Schema{
+		Required: []string{"enabled"},
 		Properties: func() *orderedmap.OrderedMap[string, *jsonschema.Schema] {
 			props := orderedmap.New[string, *jsonschema.Schema]()
 			props.Set("allow_global_users", &jsonschema.Schema{Const: true})
+			props.Set("enabled", &jsonschema.Schema{Const: true})
 			return props
 		}(),
 	}

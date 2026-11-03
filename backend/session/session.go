@@ -88,6 +88,8 @@ func (m *manager) GenerateJWT(user dto.UserJWT, opts ...JWTOptions) (string, jwt
 			return "", nil, err
 		}
 	}
+	// Tenant identity is reserved for the persisted user or authenticated flow.
+	_ = token.Remove("tenant_id")
 
 	issuedAt := time.Now()
 	expiration := issuedAt.Add(m.sessionLength)

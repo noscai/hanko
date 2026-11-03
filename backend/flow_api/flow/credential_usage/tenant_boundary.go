@@ -117,7 +117,7 @@ func serviceTokenFlowTenant(claims *ServiceTokenClaims, cfg config.MultiTenant) 
 	}
 
 	tenant, err := uuid.FromString(claims.TenantID)
-	if err != nil {
+	if err != nil || tenant.IsNil() {
 		return nil
 	}
 

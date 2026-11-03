@@ -44,6 +44,9 @@ type IssueTrustDeviceCookie struct {
 // keep the per-user growth alive indefinitely.
 func (h IssueTrustDeviceCookie) Execute(c flowpilot.HookExecutionContext) error {
 	deps := h.GetDeps(c)
+	if deps.Cfg.MultiTenant.KeepUsersGlobal && shared.FlowTenantID(c.Stash(), deps.TenantID) == nil {
+		return nil
+	}
 
 	if deps.Cfg.MFA.DeviceTrustPolicy == "never" ||
 		(deps.Cfg.MFA.DeviceTrustPolicy == "prompt" && !c.Stash().Get(shared.StashPathDeviceTrustGranted).Bool()) {
@@ -71,6 +74,7 @@ func (h IssueTrustDeviceCookie) Execute(c flowpilot.HookExecutionContext) error 
 	}
 
 	deviceTrustService := shared.FlowDeviceTrustService(c.Stash(), deps)
+	deviceTrustService.AuthenticatedAt = c.GetFlowCreatedAt()
 
 	deviceToken, err := resolveDeviceToken(deviceTrustService, presentedDeviceCookie(deps))
 	if err != nil {
