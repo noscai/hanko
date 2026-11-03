@@ -2,6 +2,8 @@
 
 This guide covers how to run the updated Hanko with multi-tenant support in Docker and test the feature.
 
+**Database prerequisite: PostgreSQL.** This fork's multi-tenant schema uses PostgreSQL partial unique indexes since migration `20260120000003_change_unique_constraints`; the trust migrations also use PostgreSQL transaction settings and timestamps. Upstream MySQL/MariaDB configuration options do not make this fork's migration chain portable to those dialects. The integration suites exercise PostgreSQL.
+
 ## Table of Contents
 - [Quick Reference Commands](#quick-reference-commands)
 - [Step-by-Step Deployment](#step-by-step-deployment)
