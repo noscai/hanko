@@ -66,6 +66,11 @@ func (h CreateUser) Execute(c flowpilot.HookExecutionContext) error {
 func (h CreateUser) createUser(c flowpilot.HookExecutionContext, id uuid.UUID, email string, emailVerified bool, username string, webauthnCredentials []gjson.Result, password, otpSecret string) error {
 	deps := h.GetDeps(c)
 
+	tenantID := deps.TenantID
+	if deps.Cfg.MultiTenant.KeepUsersGlobal {
+		tenantID = nil
+	}
+
 	now := time.Now().UTC()
 
 	var auditLogDetails []auditlog.DetailOption
@@ -77,7 +82,7 @@ func (h CreateUser) createUser(c flowpilot.HookExecutionContext, id uuid.UUID, e
 
 	err := deps.Persister.GetUserPersisterWithConnection(deps.Tx).Create(models.User{
 		ID:        id,
-		TenantID:  deps.TenantID,
+		TenantID:  tenantID,
 		CreatedAt: now,
 		UpdatedAt: now,
 	})
@@ -88,7 +93,7 @@ func (h CreateUser) createUser(c flowpilot.HookExecutionContext, id uuid.UUID, e
 	if email != "" {
 		emailModel := models.NewEmail(&id, email)
 		emailModel.Verified = emailVerified
-		emailModel.TenantID = deps.TenantID
+		emailModel.TenantID = tenantID
 		err = deps.Persister.GetEmailPersisterWithConnection(deps.Tx).Create(*emailModel)
 		if err != nil {
 			return err
@@ -108,7 +113,7 @@ func (h CreateUser) createUser(c flowpilot.HookExecutionContext, id uuid.UUID, e
 			return fmt.Errorf("failed to unmarshal stashed webauthn_credential: %w", err)
 		}
 
-		credentialModel.TenantID = deps.TenantID
+		credentialModel.TenantID = tenantID
 		err = deps.Persister.GetWebauthnCredentialPersisterWithConnection(deps.Tx).Create(credentialModel)
 		if err != nil {
 			return err
@@ -126,7 +131,7 @@ func (h CreateUser) createUser(c flowpilot.HookExecutionContext, id uuid.UUID, e
 	if password != "" {
 		err = deps.Persister.GetPasswordCredentialPersisterWithConnection(deps.Tx).Create(models.PasswordCredential{
 			UserId:   id,
-			TenantID: deps.TenantID,
+			TenantID: tenantID,
 			Password: password,
 		})
 		if err != nil {
@@ -139,7 +144,7 @@ func (h CreateUser) createUser(c flowpilot.HookExecutionContext, id uuid.UUID, e
 
 	if otpSecret != "" {
 		otpSecretModel := models.NewOTPSecret(id, otpSecret)
-		otpSecretModel.TenantID = deps.TenantID
+		otpSecretModel.TenantID = tenantID
 		err = deps.Persister.GetOTPSecretPersisterWithConnection(deps.Tx).Create(*otpSecretModel)
 		if err != nil {
 			return err
@@ -156,7 +161,7 @@ func (h CreateUser) createUser(c flowpilot.HookExecutionContext, id uuid.UUID, e
 
 	if username != "" {
 		usernameModel := models.NewUsername(user.ID, username)
-		usernameModel.TenantID = deps.TenantID
+		usernameModel.TenantID = tenantID
 		err = deps.Persister.GetUsernamePersisterWithConnection(deps.Tx).Create(*usernameModel)
 		if err != nil {
 			return err

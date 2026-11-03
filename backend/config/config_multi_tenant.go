@@ -34,9 +34,10 @@ type MultiTenant struct {
 	// for the ClinicOS in-app organisation switcher (archon#1085 task 16). Which clinics a person
 	// belongs to is then decided by ClinicOS (its user rows that share this Hanko user), not by
 	// Hanko's single user.tenant_id. This covers the pre-authenticated path too.
-	// It only stops the adoption of users who are already global: registration under a tenant
-	// header still creates a tenant-bound user, and users adopted before it was turned on stay
-	// adopted. Requires allow_global_users to be true. Environment variable:
+	// New registration identities and their credentials are also global. The request tenant
+	// still scopes the authentication flow and session proof. Before enabling, collision-check
+	// and un-adopt all existing tenant-bound identities (archon#1085 Q21/task 34).
+	// Requires allow_global_users to be true. Environment variable:
 	// MULTI_TENANT_KEEP_USERS_GLOBAL.
 	// Do not enable it on a cluster before archon#1085 task 17 runs on that cluster's Hanko: until
 	// then a kept-global user's session JWT carries no tenant_id.
