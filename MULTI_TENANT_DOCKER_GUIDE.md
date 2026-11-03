@@ -182,22 +182,24 @@ adopted before the option was turned on stay adopted (un-adopting them is a sepa
 migration). Fresh registrations and their credentials are also global; the request tenant
 still scopes the flow and session proof.
 
-> **Do not enable `keep_users_global` on a running deployment without its rollout.** Two things
+> **Do not enable `keep_users_global` on a running deployment without its rollout.** Three things
 > must come first:
-> 0. **Drain login traffic before the tenant-trust migration.** Its column addition holds
+> 1. **Drain login traffic before the tenant-trust migration.** Its column addition holds
 >    an exclusive table lock through the backfill and indexes. A nonempty table refuses
 >    migration without explicit maintenance acknowledgement: add PostgreSQL connection
 >    option `-c hanko.trusted_device_maintenance=on` to the migration job's database URL
->    only after draining all public Hanko replicas. Keep them drained until the job
+>    only after draining all public Hanko replicas. Keep them drained until every public and admin replica runs the new image and the job
 >    commits; remove the option afterward. Lock waits are limited to five seconds and
->    each statement to thirty seconds. Fresh empty databases need no acknowledgement.
-> 1. **Sessions must carry the flow tenant.** A kept-global user has no `tenant_id`, so their
+>    each statement to thirty seconds by default. For a measured large-table migration, set
+>    connection option `-c hanko.trust_migration_statement_timeout=5min` during maintenance;
+>    expired trust rows are pruned first. Fresh empty databases need no acknowledgement.
+> 2. **Sessions must carry the flow tenant.** A kept-global user has no `tenant_id`, so their
 >    session JWT names the flow's tenant instead: the `X-Tenant-ID` the flow ran under, or, for a
 >    pre-authenticated flow, the tenant its service token names. A relying party that checks the
 >    claim (ClinicOS does) refuses sessions without one. Every Hanko pod must run a version with
 >    migration `20261101235835_add_trusted_devices_tenant_id` before the flag is turned on
 >    (ClinicOS: archon#1085 task 17).
-> 2. **Users must be un-adopted, one way.** Already-adopted users stay bound until they are
+> 3. **Users must be un-adopted, one way.** Already-adopted users stay bound until they are
 >    un-adopted (`tenant_id = NULL` on the user and related rows). That data step can't be undone
 >    by turning the flag off again, and it can collide with the global unique email index. Run it
 >    from a reviewed runbook, after a verified database snapshot, with before/after counts

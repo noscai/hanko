@@ -89,9 +89,9 @@ func (s *trustedDeviceMigrationSuite) TestMigration_DedupesTrustedDevicesBeforeC
 	// test has already run and its unique index already exists -- so we
 	// can't insert duplicate (device_token, user_id) rows yet. Roll back
 	// that migration so duplicates can be inserted with raw SQL, then
-	// re-apply it and assert on the outcome. Two steps, because
-	// 20261101235835_add_trusted_devices_tenant_id runs after it and leaves
-	// this index in place; rolling back both returns the table to the
+	// re-apply it and assert on the outcome. Three steps, because
+	// the tenant-id and revocation migrations both run after it and leave
+	// this index in place; rolling back all three returns the table to the
 	// schema this migration first ran against.
 	s.Require().NoError(s.Storage.MigrateDown(3))
 

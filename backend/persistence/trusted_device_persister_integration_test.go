@@ -748,6 +748,12 @@ func (s *trustedDevicePersisterSuite) TestAdoptionMergesGlobalAndTargetTrustWith
 	s.Require().Len(rows, 1)
 	s.Equal(target.ID, rows[0].ID)
 	s.WithinDuration(target.ExpiresAt, rows[0].ExpiresAt, time.Millisecond)
+	// A stale caller cannot adopt the same identity into another clinic.
+	s.Require().ErrorContains(s.Storage.GetUserPersister().AdoptUserToTenant(userID, trustTenantB), "already belongs")
+	s.Require().NoError(s.Storage.GetUserPersister().AdoptUserToTenant(userID, trustTenantA))
+	user, err := s.Storage.GetUserPersister().Get(userID)
+	s.Require().NoError(err)
+	s.Equal(trustTenantA, *user.TenantID)
 }
 
 // insertTrustedDevice writes a row directly via raw SQL, bypassing the persister entirely, so

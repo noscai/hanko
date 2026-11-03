@@ -1,6 +1,7 @@
 sql("SET LOCAL lock_timeout = '5s'")
 sql("DO $$ BEGIN IF EXISTS (SELECT 1 FROM trusted_devices) AND current_setting('hanko.trusted_device_maintenance', true) IS DISTINCT FROM 'on' THEN RAISE EXCEPTION 'Drain Hanko login traffic before this migration; acknowledge maintenance using connection option -c hanko.trusted_device_maintenance=on'; END IF; END $$")
-sql("SET LOCAL statement_timeout = '30s'")
+sql("SELECT set_config('statement_timeout', COALESCE(NULLIF(current_setting('hanko.trust_migration_statement_timeout', true), ''), '30s'), true)")
+sql("DELETE FROM trusted_devices WHERE expires_at <= CURRENT_TIMESTAMP")
 add_column("trusted_devices", "tenant_id", "uuid", {"null": true})
 sql("UPDATE trusted_devices SET tenant_id = users.tenant_id FROM users WHERE trusted_devices.user_id = users.id AND users.tenant_id IS NOT NULL")
 sql("CREATE UNIQUE INDEX trusted_devices_token_user_tenant_idx ON trusted_devices (device_token, user_id, tenant_id) WHERE tenant_id IS NOT NULL")
@@ -16,7 +17,7 @@ sql("CREATE UNIQUE INDEX trusted_devices_token_user_global_idx ON trusted_device
 #
 # ADDITIVE ON PURPOSE. trusted_devices_token_user_idx on (device_token, user_id) stays: the previous
 # image upserts with ON CONFLICT (device_token, user_id), which only that index can arbitrate, and it
-# keeps serving while the rollout runs (and again after an image rollback). The new image names no
+# must remain drained until every public replica has been replaced. The new image names no
 # conflict target (TrustedDevicePersister.Create), so it works with this index and without it. While
 # it stands, one browser holds one trust row per user and trust follows the clinic that trusted it
 # last; before keep_users_global is on (task 34) every user belongs to one tenant, so nothing is lost.
@@ -32,11 +33,12 @@ sql("CREATE UNIQUE INDEX trusted_devices_token_user_global_idx ON trusted_device
 # not exist in this database.
 #
 # lock_timeout: add_column takes ACCESS EXCLUSIVE on trusted_devices and holds it, in this one
-# transaction, through the backfill and both index builds, while the old replica serves logins
-# that read this table. Queued behind a long-running transaction, the migrate would hold every
+# transaction, through the backfill and both index builds, while login traffic is drained. Queued behind a long-running transaction, the migrate would hold every
 # login read behind it; with the timeout it fails after 5 s and the init container retries.
 # SET LOCAL ends with this migration's transaction. Check SELECT count(*) FROM trusted_devices
-# before each cluster's rollout: rows expire after the trust window, so the table is small.
+# before each cluster's rollout. Expired rows are pruned before the backfill.
+# Large tables may set hanko.trust_migration_statement_timeout=5min in the migration
+# connection options, after sizing and draining; the default remains bounded at 30s.
 #
 # Comments must stay BELOW the sql() calls: .fizz is run through plush.RunScript, and a leading
 # comment corrupts the token stream ("no prefix parse function for ) found").

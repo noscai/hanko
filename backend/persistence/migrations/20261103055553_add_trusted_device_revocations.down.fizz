@@ -1,2 +1,5 @@
 sql("SET LOCAL lock_timeout = '5s'")
 sql("DROP TABLE trusted_device_revocations")
+# Revert all Hanko public/admin replicas to the previous image BEFORE running this down.
+# This image reads/writes revocations during trust creation and reset; dropping the table
+# while it is serving causes both operations to fail. Keep login traffic drained until done.

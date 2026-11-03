@@ -215,6 +215,18 @@ func (p *userPersister) AdoptUserToTenant(userID uuid.UUID, tenantID uuid.UUID) 
 }
 
 func (p *userPersister) adoptUserToTenant(userID uuid.UUID, tenantID uuid.UUID) error {
+	// The caller holds the user lock: a stale global-user snapshot must never
+	// migrate related rows after another clinic has already adopted the user.
+	var current models.User
+	if err := p.db.Find(&current, userID); err != nil {
+		return fmt.Errorf("failed to read adoption owner: %w", err)
+	}
+	if current.TenantID != nil {
+		if *current.TenantID == tenantID {
+			return nil
+		}
+		return fmt.Errorf("user already belongs to another tenant")
+	}
 	// A global and target-clinic row can coexist after the pair index is removed.
 	// Remove the global duplicate before assigning its tenant; keep only the
 	// target row and never extend its expiry during adoption.
