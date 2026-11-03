@@ -80,6 +80,34 @@ func (s *trustedDeviceMigrationSuite) TestTenantMigration_RefusesNonemptyTableWi
 	s.Require().NoError(s.Storage.MigrateUp(), "explicit maintenance acknowledgement permits the same migration")
 }
 
+func (s *trustedDeviceMigrationSuite) TestTenantMigration_PrunesOnlyExpiredUTCTrustInAnotherTimeZone() {
+	if testing.Short() {
+		s.T().Skip("requires disposable PostgreSQL")
+	}
+	s.Require().NoError(s.Storage.MigrateDown(2))
+	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
+	userID := uuid.FromStringOrNil(fixtureUserID)
+	live, err := s.insertTrustedDevice(strings.Repeat("z", 64), userID, time.Now().UTC().Add(time.Hour))
+	s.Require().NoError(err)
+	_, err = s.insertTrustedDevice(strings.Repeat("y", 64), userID, time.Now().UTC().Add(-time.Hour))
+	s.Require().NoError(err)
+	u, err := url.Parse(s.DB.DatabaseUrl)
+	s.Require().NoError(err)
+	q := u.Query()
+	q.Set("options", "-c hanko.trusted_device_maintenance=on -c TimeZone=Asia/Tokyo")
+	u.RawQuery = q.Encode()
+	zoned, err := persistence.New(config.Database{Url: u.String()})
+	s.Require().NoError(err)
+	defer zoned.GetConnection().Close()
+	s.Require().NoError(zoned.MigrateUp())
+	var ids []struct {
+		ID uuid.UUID `db:"id"`
+	}
+	s.Require().NoError(zoned.GetConnection().RawQuery("SELECT id FROM trusted_devices WHERE user_id = ?", userID).All(&ids))
+	s.Require().Len(ids, 1)
+	s.Equal(live, ids[0].ID)
+}
+
 func (s *trustedDeviceMigrationSuite) TestMigration_DedupesTrustedDevicesBeforeCreatingUniqueIndex() {
 	if testing.Short() {
 		s.T().Skip("skipping test in short mode.")
