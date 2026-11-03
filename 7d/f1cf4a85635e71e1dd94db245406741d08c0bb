@@ -1,0 +1,90 @@
+backend/persistence/migrations/20261103055553_add_trusted_device_revocations.up.fizz
+  s_32fcc69a51093a::t_2022de7631bcad 1-2
+backend/persistence/trusted_device_persister.go
+  s_32fcc69a51093a::t_907e90ffe50daf 79-81,98-100,217-219
+  s_32fcc69a51093a::t_2022de7631bcad 74-78,82-97,101-102,214-216,220-221
+backend/persistence/migrations/20261101235835_add_trusted_devices_tenant_id.up.fizz
+  s_32fcc69a51093a::t_56a8cb4d0f64f6 2-3
+backend/persistence/user_persister.go
+  s_32fcc69a51093a::t_56a8cb4d0f64f6 218-225
+  s_32fcc69a51093a::t_935e9b847dce71 212-217
+backend/flowpilot/mock_context.go
+  s_32fcc69a51093a::t_4d6282d9b97c29 3-6,44
+  s_32fcc69a51093a::t_907e90ffe50daf 42-43
+backend/flow_api/flow/device_trust/hook_issue_trust_device_cookie_test.go
+  s_32fcc69a51093a::t_f45e587cd8bfcd 133-145
+backend/persistence/trusted_device_migration_integration_test.go
+  s_32fcc69a51093a::t_935e9b847dce71 11,18-19,46-47,51-62,80,173,231
+  s_32fcc69a51093a::t_907e90ffe50daf 48-50
+backend/persistence/trusted_device_persister_integration_test.go
+  s_32fcc69a51093a::t_86fc0ae3dea282 710,714-727,731-737,739-752
+  s_32fcc69a51093a::t_907e90ffe50daf 664-668,676-679,690,711-713,728-730,738
+  s_32fcc69a51093a::t_4a199dcee83934 636,662-663,680-682,685-689
+backend/flowpilot/context.go
+  s_32fcc69a51093a::t_4d6282d9b97c29 25
+backend/persistence/migrations/20261103055553_add_trusted_device_revocations.down.fizz
+  s_32fcc69a51093a::t_2022de7631bcad 1-2
+backend/flow_api/flow/credential_usage/resolve_service_token_user_test.go
+  s_32fcc69a51093a::t_56a8cb4d0f64f6 253
+backend/config/config_multi_tenant_test.go
+  s_32fcc69a51093a::t_f45e587cd8bfcd 54-59
+backend/session/session.go
+  s_32fcc69a51093a::t_53ea4285af7892 91-92
+backend/flowpilot/context_flow.go
+  s_32fcc69a51093a::t_4d6282d9b97c29 5,22-23
+  s_3b909167bd254c::t_bd666552710925 24-25
+MULTI_TENANT_DOCKER_GUIDE.md
+  s_32fcc69a51093a::t_56a8cb4d0f64f6 182-183,187-193
+backend/flow_api/services/device_trust.go
+  s_32fcc69a51093a::t_907e90ffe50daf 56,68-74
+  s_32fcc69a51093a::t_4d6282d9b97c29 57,67
+backend/session/session_test.go
+  s_32fcc69a51093a::t_56a8cb4d0f64f6 253
+backend/flow_api/flow/device_trust/hook_issue_trust_device_cookie.go
+  s_32fcc69a51093a::t_4d6282d9b97c29 47,77
+  s_32fcc69a51093a::t_53ea4285af7892 48-49
+backend/persistence/models/trusted_device.go
+  s_32fcc69a51093a::t_907e90ffe50daf 12-19
+backend/config/config_multi_tenant.go
+  s_32fcc69a51093a::t_56a8cb4d0f64f6 62-64,83,87
+backend/flow_api/flow/credential_usage/action_continue_with_login_identifier_p6_test.go
+  s_32fcc69a51093a::t_fa786b81dc4258 249-250,352-353
+backend/flow_api/flow/credential_usage/action_password_login_p6_test.go
+  s_32fcc69a51093a::t_719df01d6c5ce3 121-122,184-185,273-274
+backend/flow_api/flow/credential_usage/tenant_boundary.go
+  s_32fcc69a51093a::t_6e2d295503ea55 120
+backend/flow_api/flow/registration/action_register_login_identifier.go
+  s_32fcc69a51093a::t_f99d9a5c75b29c 132,138-139
+backend/flow_api/services/device_trust_test.go
+  s_32fcc69a51093a::t_df89433557116e 802-803,808-809,814-815
+backend/json_schema/hanko.config.json
+  s_3b909167bd254c::t_ebcdd17c382ad2 875-877,879-882,907
+backend/persistence/migrations/20261101235835_add_trusted_devices_tenant_id.down.fizz
+  s_32fcc69a51093a::t_546a6d6c432036 1
+deploy/docker-compose/config.yaml
+  s_32fcc69a51093a::t_11a341242a9dd5 98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7df1cf4a85635e71e1dd94db245406741d08c0bb",
+  "prompts": {},
+  "sessions": {
+    "s_32fcc69a51093a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19f0f-6e83-7b21-8dbb-6ef161839480",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    },
+    "s_3b909167bd254c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19fb4-f211-7a01-8061-5eb352e77b63",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}
