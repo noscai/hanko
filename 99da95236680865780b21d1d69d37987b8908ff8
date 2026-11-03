@@ -1,0 +1,33 @@
+backend/persistence/trusted_device_persister_test.go
+  s_72ae283317499b::t_c1ad47fdbd7343 1-204
+backend/flow_api/services/device_trust_test.go
+  s_72ae283317499b::t_af5139e5e169c1 607-610
+MULTI_TENANT_DOCKER_GUIDE.md
+  s_72ae283317499b::t_9d08dedbc94d94 199-210
+backend/persistence/migrations/20261101235835_add_trusted_devices_tenant_id.down.fizz
+  s_72ae283317499b::t_26da652a0e5d10 4-7,9-10
+backend/persistence/migrations/20261101235835_add_trusted_devices_tenant_id.up.fizz
+  s_72ae283317499b::t_934ca14280c236 5-7,14-25
+backend/persistence/trusted_device_migration_integration_test.go
+  s_72ae283317499b::t_bfa6d054647182 57-59,99,101,187-190,201-202,204-205,207-209,211,214-218,223-234
+backend/persistence/trusted_device_persister.go
+  s_72ae283317499b::t_2c3cde510c0ee0 38-41,43-49,51,55-59,69-110,113-154
+backend/persistence/trusted_device_persister_integration_test.go
+  s_72ae283317499b::t_051c8117027d80 11,437-440,449-495,537-565,577-579,584
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "99da95236680865780b21d1d69d37987b8908ff8",
+  "prompts": {},
+  "sessions": {
+    "s_72ae283317499b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "219a2835-1bf2-4ccf-97e2-ab2fb90e92f2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}

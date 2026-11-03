@@ -1,0 +1,21 @@
+backend/flow_api/flow/credential_usage/action_login_support_p6_test.go
+  s_72ae283317499b::t_0b07c510c4eef8 6,17,134-138,164-199,297-303
+backend/flow_api/flow/credential_usage/action_password_login_p6_test.go
+  s_72ae283317499b::t_2a57deef7bc172 108-109,111-134,163-168,171,180,183,186,190,192-195,256-257,259-282
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f947bd38057fc2d963312d88184bb8c1ffd2bb86",
+  "prompts": {},
+  "sessions": {
+    "s_72ae283317499b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "219a2835-1bf2-4ccf-97e2-ab2fb90e92f2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}

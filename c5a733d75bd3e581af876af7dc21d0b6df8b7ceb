@@ -1,0 +1,25 @@
+backend/persistence/trusted_device_persister_integration_test.go
+  s_e192dd3b10b3fa::t_d5df75e470ed49 23
+backend/persistence/migrations/20260828085758_add_trusted_devices_token_user_unique.up.fizz
+  s_e192dd3b10b3fa::t_d5df75e470ed49 2-11
+backend/persistence/trusted_device_persister.go
+  s_e192dd3b10b3fa::t_d5df75e470ed49 33
+backend/persistence/migrations/20260828085758_add_trusted_devices_token_user_unique.down.fizz
+  s_e192dd3b10b3fa::t_d5df75e470ed49 1-3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "c5a733d75bd3e581af876af7dc21d0b6df8b7ceb",
+  "prompts": {},
+  "sessions": {
+    "s_e192dd3b10b3fa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "017a763e-b10b-4355-bc95-e83a7a308e92",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Fadlika Dita Nurjanto <fadlikadn@gmail.com>"
+    }
+  }
+}

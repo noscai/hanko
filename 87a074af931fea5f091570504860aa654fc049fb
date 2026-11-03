@@ -1,0 +1,43 @@
+backend/flow_api/flow/credential_usage/action_preauthenticated_continue.go
+  s_5514406e176002::t_e12a0b1738320f 75-78
+backend/flow_api/flow/credential_usage/action_preauthenticated_continue_test.go
+  s_72ae283317499b::t_67165aa0dec836 262-302
+backend/flow_api/flow/credential_usage/tenant_boundary.go
+  s_72ae283317499b::t_b44b7956335c23 29-31,100-121
+backend/flow_api/flow/shared/const_stash_paths.go
+  s_72ae283317499b::t_7b90064defadde 18
+backend/flow_api/flow/shared/flow_tenant.go
+  s_72ae283317499b::t_0d0933b50b344a 1-43
+backend/flow_api/flow/shared/flow_tenant_test.go
+  s_5514406e176002::t_4ab316ce5cac4e 1-44
+backend/flow_api/flow/shared/hook_issue_session.go
+  s_72ae283317499b::t_afc84db4d5aaf8 43-45
+backend/session/session.go
+  s_72ae283317499b::t_20dd15ddde509e 179-197
+backend/session/session_test.go
+  s_72ae283317499b::t_fd3a6dab8f486d 244-290
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "87a074af931fea5f091570504860aa654fc049fb",
+  "prompts": {},
+  "sessions": {
+    "s_5514406e176002": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4edd2301-4082-4b82-808a-7fe6ca1b3fbf",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    },
+    "s_72ae283317499b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "219a2835-1bf2-4ccf-97e2-ab2fb90e92f2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}

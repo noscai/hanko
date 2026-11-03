@@ -1,0 +1,19 @@
+backend/test/mailslurper.go
+  s_e192dd3b10b3fa::t_d902993427b51a 172
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "77dfd0b4c15ee39ecf755293929c485619702c38",
+  "prompts": {},
+  "sessions": {
+    "s_e192dd3b10b3fa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "017a763e-b10b-4355-bc95-e83a7a308e92",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Fadlika Dita Nurjanto <fadlikadn@gmail.com>"
+    }
+  }
+}

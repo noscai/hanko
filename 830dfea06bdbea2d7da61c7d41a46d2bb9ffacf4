@@ -1,0 +1,22 @@
+backend/flow_api/flow/credential_usage/tenant_boundary.go
+  s_4b59cc2e2263f3::t_1a1f8a4d7b8dd6 124-127,134-146
+backend/flow_api/flow/credential_usage/resolve_service_token_user_test.go
+  s_4b59cc2e2263f3::t_51b0e767d9d5af 30-34,48-60
+  s_4b59cc2e2263f3::t_e59439fc1a42d7 95-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "830dfea06bdbea2d7da61c7d41a46d2bb9ffacf4",
+  "prompts": {},
+  "sessions": {
+    "s_4b59cc2e2263f3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "448103c2-57a3-4c2a-a9da-df6758e477c1",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Fadlika Dita Nurjanto <fadlikadn@gmail.com>"
+    }
+  }
+}

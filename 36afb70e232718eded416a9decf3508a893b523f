@@ -1,0 +1,19 @@
+backend/persistence/trusted_device_persister_integration_test.go
+  s_e192dd3b10b3fa::t_8345b94a674868 210-211,216-223,225-229,231,235-236,246-255
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "36afb70e232718eded416a9decf3508a893b523f",
+  "prompts": {},
+  "sessions": {
+    "s_e192dd3b10b3fa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "017a763e-b10b-4355-bc95-e83a7a308e92",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Fadlika Dita Nurjanto <fadlikadn@gmail.com>"
+    }
+  }
+}

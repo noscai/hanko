@@ -1,0 +1,23 @@
+backend/config/config_multi_tenant_test.go
+  s_72ae283317499b::t_a6ecbc7813717d 1-43
+backend/config/config.go
+  s_72ae283317499b::t_f85e74c8117dd6 194-197
+backend/config/config_multi_tenant.go
+  s_72ae283317499b::t_e0e5c1b4178603 3-4,45-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e8809b434cd0761c1a138c5e0db5df6e77f2c1e3",
+  "prompts": {},
+  "sessions": {
+    "s_72ae283317499b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "219a2835-1bf2-4ccf-97e2-ab2fb90e92f2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}

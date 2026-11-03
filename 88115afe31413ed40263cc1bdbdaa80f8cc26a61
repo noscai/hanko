@@ -1,0 +1,20 @@
+backend/flow_api/flow/credential_usage/service_token_test.go
+  s_f7f21bc43a412f::t_fbfcdba1d08e36 1-66,82-186
+  s_f7f21bc43a412f::t_c606ae3f53b4dc 67-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "88115afe31413ed40263cc1bdbdaa80f8cc26a61",
+  "prompts": {},
+  "sessions": {
+    "s_f7f21bc43a412f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0bf1efa1-d767-40a8-826b-8c18e449a5a7",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Fadlika Dita Nurjanto <fadlikadn@gmail.com>"
+    }
+  }
+}

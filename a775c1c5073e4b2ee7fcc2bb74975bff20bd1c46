@@ -1,0 +1,28 @@
+backend/flowpilot/mock_context.go
+  s_f7f21bc43a412f::t_c5b3f5872c9384 1-60
+backend/coverage-floors.txt
+  s_f7f21bc43a412f::t_6690cba540b8f5 36,38-43,45-49
+backend/flow_api/flow/credential_usage/action_preauthenticated_continue_test.go
+  s_f7f21bc43a412f::t_1f5e0f2900aa26 1-102,126-157,169-179,182-260
+  s_f7f21bc43a412f::t_5dcdc8b031fe44 158-168,180-181
+  s_f7f21bc43a412f::t_c65a0eb7f6964c 103-125
+  s_f7f21bc43a412f::t_f0ec1078aa3c88 261-288
+backend/flow_api/flow/device_trust/hook_issue_trust_device_cookie_test.go
+  s_f7f21bc43a412f::t_4f946a015d6287 1-247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "a775c1c5073e4b2ee7fcc2bb74975bff20bd1c46",
+  "prompts": {},
+  "sessions": {
+    "s_f7f21bc43a412f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0bf1efa1-d767-40a8-826b-8c18e449a5a7",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Fadlika Dita Nurjanto <fadlikadn@gmail.com>"
+    }
+  }
+}
