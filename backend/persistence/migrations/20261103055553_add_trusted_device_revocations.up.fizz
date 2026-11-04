@@ -1,5 +1,7 @@
 sql("SET LOCAL lock_timeout = '5s'")
-sql("DO $$ BEGIN IF EXISTS (SELECT 1 FROM users) AND current_setting('hanko.trusted_device_maintenance', true) IS DISTINCT FROM 'on' THEN RAISE EXCEPTION 'Drain Hanko login traffic before this migration; acknowledge maintenance using connection option -c hanko.trusted_device_maintenance=on'; END IF; END $$")
 sql("CREATE TABLE trusted_device_revocations (user_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, revoked_at timestamptz NOT NULL)")
 # PostgreSQL is required by this fork (including the existing tenant partial indexes).
-# Drain ALL old-image replicas before migration and replace them before restoring traffic.
+# No drain: CREATE TABLE ... REFERENCES users takes a brief lock on users, bounded by the 5 s
+# lock_timeout, and the init container retries. The race a drain would guard (an old pod
+# recreating trust after a revocation) needs a revocation during the Hanko rollout; the only
+# caller of the revocation route is clinic-os#8469, which deploys after this image.

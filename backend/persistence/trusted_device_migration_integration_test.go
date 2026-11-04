@@ -43,28 +43,22 @@ type trustedDeviceMigrationSuite struct {
 	test.Suite
 }
 
-func (s *trustedDeviceMigrationSuite) SetupSuite() {
-	s.Suite.SetupSuite()
-	if testing.Short() {
-		return
-	}
-	// These disposable databases have no serving login replicas. Acknowledge
-	// maintenance explicitly when reapplying migrations to seeded tables.
+func (s *trustedDeviceMigrationSuite) connectWithOptions(options string) persistence.Storage {
 	u, err := url.Parse(s.DB.DatabaseUrl)
 	s.Require().NoError(err)
 	q := u.Query()
-	q.Set("options", "-c hanko.trusted_device_maintenance=on")
+	q.Set("options", options)
 	u.RawQuery = q.Encode()
-	s.Require().NoError(s.Storage.GetConnection().Close())
-	s.Storage, err = persistence.New(config.Database{Url: u.String()})
+	storage, err := persistence.New(config.Database{Url: u.String()})
 	s.Require().NoError(err)
+	return storage
 }
 
 // fixtureUserID matches test/fixtures/user/users.yaml, loaded below to
 // satisfy trusted_devices.user_id's FK to users.id.
 const fixtureUserID = "b5dd5267-b462-48be-b70d-bcd6f1bbe7a5"
 
-func (s *trustedDeviceMigrationSuite) TestTenantMigration_RefusesNonemptyTableWithoutMaintenanceAcknowledgement() {
+func (s *trustedDeviceMigrationSuite) TestTenantMigration_RunsUnderLiveTrafficBelowTheSizeGate() {
 	if testing.Short() {
 		s.T().Skip("requires disposable PostgreSQL")
 	}
@@ -72,12 +66,36 @@ func (s *trustedDeviceMigrationSuite) TestTenantMigration_RefusesNonemptyTableWi
 	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
 	_, err := s.insertTrustedDevice(strings.Repeat("m", 64), uuid.FromStringOrNil(fixtureUserID), time.Now().UTC().Add(time.Hour))
 	s.Require().NoError(err)
-	unacknowledged, err := persistence.New(config.Database{Url: s.DB.DatabaseUrl})
+	s.Require().NoError(s.Storage.MigrateUp(), "a cluster below the size gate migrates without a drain")
+}
+
+func (s *trustedDeviceMigrationSuite) TestTenantMigration_RefusesAboveTheSizeGateWithoutMaintenanceAcknowledgement() {
+	if testing.Short() {
+		s.T().Skip("requires disposable PostgreSQL")
+	}
+	s.Require().NoError(s.Storage.MigrateDown(2))
+	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
+	_, err := s.insertTrustedDevice(strings.Repeat("m", 64), uuid.FromStringOrNil(fixtureUserID), time.Now().UTC().Add(time.Hour))
 	s.Require().NoError(err)
-	defer unacknowledged.GetConnection().Close()
-	err = unacknowledged.MigrateUp()
-	s.Require().ErrorContains(err, "Drain Hanko login traffic")
-	s.Require().NoError(s.Storage.MigrateUp(), "explicit maintenance acknowledgement permits the same migration")
+	overGate := s.connectWithOptions("-c hanko.trust_migration_max_live_rows=0")
+	defer overGate.GetConnection().Close()
+	s.Require().ErrorContains(overGate.MigrateUp(), "too large to migrate under live login traffic")
+	acknowledged := s.connectWithOptions("-c hanko.trust_migration_max_live_rows=0 -c hanko.trusted_device_maintenance=on")
+	defer acknowledged.GetConnection().Close()
+	s.Require().NoError(acknowledged.MigrateUp(), "explicit maintenance acknowledgement permits the same migration")
+}
+
+func (s *trustedDeviceMigrationSuite) TestTenantMigration_SizeGateCountsOnlyLiveTrust() {
+	if testing.Short() {
+		s.T().Skip("requires disposable PostgreSQL")
+	}
+	s.Require().NoError(s.Storage.MigrateDown(2))
+	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
+	_, err := s.insertTrustedDevice(strings.Repeat("e", 64), uuid.FromStringOrNil(fixtureUserID), time.Now().UTC().Add(-time.Hour))
+	s.Require().NoError(err)
+	overGate := s.connectWithOptions("-c hanko.trust_migration_max_live_rows=0")
+	defer overGate.GetConnection().Close()
+	s.Require().NoError(overGate.MigrateUp(), "expired rows are pruned, not counted")
 }
 
 func (s *trustedDeviceMigrationSuite) TestTenantMigration_PrunesOnlyExpiredUTCTrustInAnotherTimeZone() {
@@ -91,13 +109,7 @@ func (s *trustedDeviceMigrationSuite) TestTenantMigration_PrunesOnlyExpiredUTCTr
 	s.Require().NoError(err)
 	_, err = s.insertTrustedDevice(strings.Repeat("y", 64), userID, time.Now().UTC().Add(-time.Hour))
 	s.Require().NoError(err)
-	u, err := url.Parse(s.DB.DatabaseUrl)
-	s.Require().NoError(err)
-	q := u.Query()
-	q.Set("options", "-c hanko.trusted_device_maintenance=on -c TimeZone=Asia/Tokyo")
-	u.RawQuery = q.Encode()
-	zoned, err := persistence.New(config.Database{Url: u.String()})
-	s.Require().NoError(err)
+	zoned := s.connectWithOptions("-c TimeZone=Asia/Tokyo")
 	defer zoned.GetConnection().Close()
 	s.Require().NoError(zoned.MigrateUp())
 	var ids []struct {

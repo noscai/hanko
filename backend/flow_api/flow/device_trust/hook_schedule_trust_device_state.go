@@ -13,6 +13,10 @@ type ScheduleTrustDeviceState struct {
 func (h ScheduleTrustDeviceState) Execute(c flowpilot.HookExecutionContext) error {
 	deps := h.GetDeps(c)
 
+	if deps.Cfg.MultiTenant.KeepUsersGlobal && shared.FlowTenantID(c.Stash(), deps.TenantID) == nil {
+		return nil
+	}
+
 	if !deps.Cfg.MFA.Enabled || deps.Cfg.MFA.DeviceTrustPolicy != "prompt" {
 		return nil
 	}

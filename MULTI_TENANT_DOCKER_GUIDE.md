@@ -184,24 +184,15 @@ adopted before the option was turned on stay adopted (un-adopting them is a sepa
 migration). Fresh registrations and their credentials are also global; the request tenant
 still scopes the flow and session proof.
 
-> **Do not enable `keep_users_global` on a running deployment without its rollout.** Three things
+> **Do not enable `keep_users_global` on a running deployment without its rollout.** Two things
 > must come first:
-> 1. **Drain login traffic before the tenant-trust migration.** Its column addition holds
->    an exclusive table lock through the backfill and indexes. A nonempty table refuses
->    migration without explicit maintenance acknowledgement: add PostgreSQL connection
->    option `-c hanko.trusted_device_maintenance=on` to the migration job's database URL
->    only after draining all public Hanko replicas. Keep them drained until every public and admin replica runs the new image and the job
->    commits; remove the option afterward. Lock waits are limited to five seconds and
->    each statement to thirty seconds by default. For a measured large-table migration, set
->    connection option `-c hanko.trust_migration_statement_timeout=5min` during maintenance;
->    expired trust rows are pruned first. Fresh empty databases need no acknowledgement.
-> 2. **Sessions must carry the flow tenant.** A kept-global user has no `tenant_id`, so their
+> 1. **Sessions must carry the flow tenant.** A kept-global user has no `tenant_id`, so their
 >    session JWT names the flow's tenant instead: the `X-Tenant-ID` the flow ran under, or, for a
 >    pre-authenticated flow, the tenant its service token names. A relying party that checks the
 >    claim (ClinicOS does) refuses sessions without one. Every Hanko pod must run a version with
 >    migration `20261101235835_add_trusted_devices_tenant_id` before the flag is turned on
 >    (ClinicOS: archon#1085 task 17).
-> 3. **Users must be un-adopted, one way.** Already-adopted users stay bound until they are
+> 2. **Users must be un-adopted, one way.** Already-adopted users stay bound until they are
 >    un-adopted (`tenant_id = NULL` on the user and related rows). That data step can't be undone
 >    by turning the flag off again, and it can collide with the global unique email index. Run it
 >    from a reviewed runbook, after a verified database snapshot, with before/after counts
@@ -264,6 +255,28 @@ You should see output indicating the migrations were applied:
 [migrate] Applied migration: 20260120000002_add_tenant_id
 [migrate] Applied migration: 20260120000003_change_unique_constraints
 ```
+
+#### Trusted-device migrations on Kubernetes
+
+On the ClinicOS clusters there is no separate migration job: `hanko-migrate` is an initContainer
+of the `hanko` Deployment and runs `/hanko migrate up` with the same Vault-rendered `hanko-db`
+Secret the server uses. Under the Deployment's rolling update, a failed migration leaves the new
+pod in `Init:CrashLoopBackOff` while the old pods keep serving, and every later image waits behind
+it, so check these two migrations' preconditions before rolling out the image:
+
+- `20261103055553_add_trusted_device_revocations` needs no drain. Deploy it before the backend that
+  calls the revocation route (https://github.com/noscai/clinic-os/pull/8469); a revocation made before every Hanko pod runs this
+  image could be undone by an old pod re-trusting the browser.
+- `20261101235835_add_trusted_devices_tenant_id` holds an exclusive lock on `trusted_devices`
+  through its backfill and index builds, so it refuses when more than 50000 live (unexpired) rows
+  exist. Check before each cluster's rollout:
+  `SELECT count(*) FROM trusted_devices WHERE expires_at > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`.
+  Below the threshold it runs under live traffic: lock waits stop after five seconds and each
+  statement after thirty, and the initContainer retries. Above it, drain login traffic first,
+  then add PostgreSQL connection option `-c hanko.trusted_device_maintenance=on` (and, for a
+  measured large table, `-c hanko.trust_migration_statement_timeout=5min`) to the
+  initContainer's database URL for that rollout only; the threshold itself can be changed with
+  `-c hanko.trust_migration_max_live_rows=<n>`. Expired rows are pruned first and never counted.
 
 ---
 

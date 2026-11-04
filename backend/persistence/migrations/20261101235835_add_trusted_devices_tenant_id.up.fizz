@@ -1,5 +1,5 @@
 sql("SET LOCAL lock_timeout = '5s'")
-sql("DO $$ BEGIN IF EXISTS (SELECT 1 FROM trusted_devices) AND current_setting('hanko.trusted_device_maintenance', true) IS DISTINCT FROM 'on' THEN RAISE EXCEPTION 'Drain Hanko login traffic before this migration; acknowledge maintenance using connection option -c hanko.trusted_device_maintenance=on'; END IF; END $$")
+sql("DO $$ BEGIN IF (SELECT count(*) FROM trusted_devices WHERE expires_at > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')) > COALESCE(NULLIF(current_setting('hanko.trust_migration_max_live_rows', true), '')::bigint, 50000) AND current_setting('hanko.trusted_device_maintenance', true) IS DISTINCT FROM 'on' THEN RAISE EXCEPTION 'trusted_devices is too large to migrate under live login traffic; drain Hanko and acknowledge maintenance using connection option -c hanko.trusted_device_maintenance=on'; END IF; END $$")
 sql("SELECT set_config('statement_timeout', COALESCE(NULLIF(current_setting('hanko.trust_migration_statement_timeout', true), ''), '30s'), true)")
 sql("DELETE FROM trusted_devices WHERE expires_at <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")
 add_column("trusted_devices", "tenant_id", "uuid", {"null": true})
@@ -33,12 +33,17 @@ sql("CREATE UNIQUE INDEX trusted_devices_token_user_global_idx ON trusted_device
 # not exist in this database.
 #
 # lock_timeout: add_column takes ACCESS EXCLUSIVE on trusted_devices and holds it, in this one
-# transaction, through the backfill and both index builds, while login traffic is drained. Queued behind a long-running transaction, the migrate would hold every
-# login read behind it; with the timeout it fails after 5 s and the init container retries.
-# SET LOCAL ends with this migration's transaction. Check SELECT count(*) FROM trusted_devices
-# before each cluster's rollout. Expired rows are pruned before the backfill.
-# Large tables may set hanko.trust_migration_statement_timeout=5min in the migration
-# connection options, after sizing and draining; the default remains bounded at 30s.
+# transaction, through the backfill and both index builds. Queued behind a long-running
+# transaction, the migrate would hold every login read behind it; with the timeout it fails after
+# 5 s and the init container retries while the old pods keep serving. SET LOCAL ends with this
+# migration's transaction. Expired rows are pruned before the backfill.
+#
+# Size gate: the lock is held for a time that scales with the live (unexpired) rows, one per browser
+# and user under 7-day trust. Up to 50000 live rows (override with
+# hanko.trust_migration_max_live_rows) the migration runs under live traffic, like
+# 20260828085758_add_trusted_devices_token_user_unique did on this table. Above it, it refuses until
+# login traffic is drained and the connection sets hanko.trusted_device_maintenance=on; such a table
+# may also need hanko.trust_migration_statement_timeout=5min (default 30s).
 #
 # Comments must stay BELOW the sql() calls: .fizz is run through plush.RunScript, and a leading
 # comment corrupts the token stream ("no prefix parse function for ) found").
