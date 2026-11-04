@@ -1,6 +1,6 @@
 sql("SET LOCAL lock_timeout = '5s'")
-sql("DO $$ BEGIN IF (SELECT count(*) FROM trusted_devices WHERE expires_at > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')) > COALESCE(NULLIF(current_setting('hanko.trust_migration_max_live_rows', true), '')::bigint, 50000) AND current_setting('hanko.trusted_device_maintenance', true) IS DISTINCT FROM 'on' THEN RAISE EXCEPTION 'trusted_devices is too large to migrate under live login traffic; drain Hanko and acknowledge maintenance using connection option -c hanko.trusted_device_maintenance=on'; END IF; END $$")
 sql("SELECT set_config('statement_timeout', COALESCE(NULLIF(current_setting('hanko.trust_migration_statement_timeout', true), ''), '30s'), true)")
+sql("DO $$ BEGIN IF (SELECT count(*) FROM trusted_devices WHERE expires_at > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')) > COALESCE(NULLIF(current_setting('hanko.trust_migration_max_live_rows', true), '')::bigint, 50000) AND current_setting('hanko.trusted_device_maintenance', true) IS DISTINCT FROM 'on' THEN RAISE EXCEPTION 'trusted_devices is too large to migrate under live login traffic; drain Hanko and acknowledge maintenance using connection option -c hanko.trusted_device_maintenance=on'; END IF; END $$")
 sql("DELETE FROM trusted_devices WHERE expires_at <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")
 add_column("trusted_devices", "tenant_id", "uuid", {"null": true})
 sql("UPDATE trusted_devices SET tenant_id = users.tenant_id FROM users WHERE trusted_devices.user_id = users.id AND users.tenant_id IS NOT NULL")
