@@ -88,6 +88,8 @@ func (m *manager) GenerateJWT(user dto.UserJWT, opts ...JWTOptions) (string, jwt
 			return "", nil, err
 		}
 	}
+	// Tenant identity is reserved for the persisted user or authenticated flow.
+	_ = token.Remove("tenant_id")
 
 	issuedAt := time.Now()
 	expiration := issuedAt.Add(m.sessionLength)
@@ -174,5 +176,24 @@ type JWTOptions func(token jwt.Token)
 func WithValue(key string, value interface{}) JWTOptions {
 	return func(jwt jwt.Token) {
 		_ = jwt.Set(key, value)
+	}
+}
+
+// WithFlowTenant names the tenant whose flow issued the session, for a user who has no tenant of
+// their own. A user kept global (multi_tenant.keep_users_global) signs in to every clinic they
+// belong to with one identity, so their row carries no tenant_id and, without this, their session
+// would name none: clinic-os could not tell which clinic's flow, and which clinic's device trust,
+// produced it (archon#1085 Q18). An adopted user's own tenant_id, set by GenerateJWT before any
+// option runs, is never replaced. An empty tenantID (a flow that ran without a tenant) adds
+// nothing.
+func WithFlowTenant(tenantID string) JWTOptions {
+	return func(token jwt.Token) {
+		if tenantID == "" {
+			return
+		}
+		if _, ok := token.Get("tenant_id"); ok {
+			return
+		}
+		_ = token.Set("tenant_id", tenantID)
 	}
 }

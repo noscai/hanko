@@ -26,7 +26,7 @@ const (
 )
 
 // fakeTrustedDevicePersister is the whole persistence dependency of DeviceTrustService. The
-// interface is three methods, which is what lets the entire service be tested with no Postgres.
+// interface is four methods, which is what lets the entire service be tested with no Postgres.
 //
 // Rows are kept as a slice rather than a token-keyed map because one device_token is now shared
 // by every user who trusted that browser (uq_trusted_devices_token_user is on the PAIR). A
@@ -79,9 +79,9 @@ func (f *fakeTrustedDevicePersister) FindByDeviceToken(token string) (*models.Tr
 	return f.byToken[token], nil
 }
 
-// FindValidTrust mirrors the real persister's (device_token, user_id, expires_at > now) filter
-// against this fake's in-memory rows, including the strict ">" on expiry.
-func (f *fakeTrustedDevicePersister) FindValidTrust(deviceToken string, userID uuid.UUID, now time.Time) (*models.TrustedDevice, error) {
+// FindValidTrust mirrors the real persister's (device_token, user_id, tenant, expires_at > now)
+// filter against this fake's in-memory rows, including the strict ">" on expiry.
+func (f *fakeTrustedDevicePersister) FindValidTrust(deviceToken string, userID uuid.UUID, tenantID *uuid.UUID, now time.Time) (*models.TrustedDevice, error) {
 	f.findValidTrustCalls++
 	if f.findErr != nil {
 		return nil, f.findErr
@@ -90,11 +90,16 @@ func (f *fakeTrustedDevicePersister) FindValidTrust(deviceToken string, userID u
 		return nil, err
 	}
 	for _, td := range f.rowsFor(deviceToken, now) {
-		if td.UserID == userID && td.ExpiresAt.After(now) {
+		if td.UserID == userID && td.MatchesTenant(tenantID) && td.ExpiresAt.After(now) {
 			return td, nil
 		}
 	}
 	return nil, nil
+}
+
+// DeleteByUserID is the admin 2FA-reset path; the device-trust login flow never calls it.
+func (f *fakeTrustedDevicePersister) DeleteByUserID(uuid.UUID) error {
+	return nil
 }
 
 func (f *fakeTrustedDevicePersister) rowsFor(deviceToken string, now time.Time) []*models.TrustedDevice {
@@ -547,8 +552,8 @@ func TestCheckDeviceTrust_RowForAnotherUserIsRejectedInGo(t *testing.T) {
 		"a row belonging to another user must be rejected in Go even if the query returns it")
 }
 
-// unscopedPersister returns its one row for any (token, user) pair -- a persister whose user_id
-// predicate has been lost.
+// unscopedPersister returns its one row for any (token, user, tenant) -- a persister whose user_id
+// or tenant predicate has been lost.
 type unscopedPersister struct {
 	row *models.TrustedDevice
 }
@@ -557,8 +562,96 @@ func (p *unscopedPersister) Create(models.TrustedDevice) error { return nil }
 func (p *unscopedPersister) FindByDeviceToken(string) (*models.TrustedDevice, error) {
 	return p.row, nil
 }
-func (p *unscopedPersister) FindValidTrust(string, uuid.UUID, time.Time) (*models.TrustedDevice, error) {
+func (p *unscopedPersister) FindValidTrust(string, uuid.UUID, *uuid.UUID, time.Time) (*models.TrustedDevice, error) {
 	return p.row, nil
+}
+func (p *unscopedPersister) DeleteByUserID(uuid.UUID) error { return nil }
+
+// ---- Trust per tenant (archon#1085 Q15, 6.2 #20) ----
+
+var (
+	trustTenantA = uuid.FromStringOrNil("aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa")
+	trustTenantB = uuid.FromStringOrNil("bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb")
+)
+
+// newServiceUnderTenant is newServiceWithCookies for a flow running under flowTenant.
+func newServiceUnderTenant(t *testing.T, persister *fakeTrustedDevicePersister, deviceCookieValue string, flowTenant *uuid.UUID) DeviceTrustService {
+	t.Helper()
+	svc := newServiceWithCookies(t, persister, "", deviceCookieValue)
+	svc.TenantID = flowTenant
+	return svc
+}
+
+// One Hanko user now signs in to every clinic they belong to. Before this change trust was matched
+// by device token and user only, so a browser trusted while signing in to clinic A skipped clinic
+// B's second factor too. Trust is now written under the flow's tenant and answers only that tenant.
+func TestCheckDeviceTrust_TrustUnderOneTenantDoesNotSkipAnothersSecondFactor(t *testing.T) {
+	user := uuid.Must(uuid.NewV4())
+	tok := randToken(t)
+	cookie := deviceTokenPrefix + tok
+
+	p := newFakePersister()
+	require.NoError(t, newServiceUnderTenant(t, p, "", &trustTenantA).CreateTrustedDevice(user, tok))
+	require.Len(t, p.created, 1)
+	require.NotNil(t, p.created[0].TenantID, "trust must be recorded under the flow's tenant")
+	assert.Equal(t, trustTenantA, *p.created[0].TenantID)
+
+	assert.True(t, newServiceUnderTenant(t, p, cookie, &trustTenantA).CheckDeviceTrust(user),
+		"trust recorded under A must skip A's second factor")
+	assert.False(t, newServiceUnderTenant(t, p, cookie, &trustTenantB).CheckDeviceTrust(user),
+		"trust recorded under A must not skip B's second factor")
+	assert.False(t, newServiceUnderTenant(t, p, cookie, nil).CheckDeviceTrust(user),
+		"trust recorded under A must not skip a flow that runs without a tenant")
+}
+
+// Once archon#1085 task 34 drops trusted_devices_token_user_idx, the same browser holds the same
+// person's trust for two clinics side by side, and each tenant is answered from its own row. Which
+// rows the write keeps under each index shape is the persister's (TestUpsertTrustedDevice_*); this
+// fake keeps every row it is given, the shape after task 34.
+func TestCheckDeviceTrust_OneBrowserHoldsTrustForTwoTenants(t *testing.T) {
+	user := uuid.Must(uuid.NewV4())
+	tok := randToken(t)
+	cookie := deviceTokenPrefix + tok
+
+	p := newFakePersister()
+	require.NoError(t, newServiceUnderTenant(t, p, "", &trustTenantA).CreateTrustedDevice(user, tok))
+	require.NoError(t, newServiceUnderTenant(t, p, "", &trustTenantB).CreateTrustedDevice(user, tok))
+
+	assert.True(t, newServiceUnderTenant(t, p, cookie, &trustTenantA).CheckDeviceTrust(user))
+	assert.True(t, newServiceUnderTenant(t, p, cookie, &trustTenantB).CheckDeviceTrust(user))
+}
+
+// A row written before trust was scoped carries no tenant. It keeps answering flows that run
+// without a tenant, and answers no clinic's flow.
+func TestCheckDeviceTrust_LegacyRowAnswersOnlyAFlowWithoutTenant(t *testing.T) {
+	user := uuid.Must(uuid.NewV4())
+	tok := randToken(t)
+	cookie := deviceTokenPrefix + tok
+
+	p := newFakePersister()
+	p.store(user, tok, time.Now().Add(time.Hour).UTC())
+
+	assert.True(t, newServiceUnderTenant(t, p, cookie, nil).CheckDeviceTrust(user))
+	assert.False(t, newServiceUnderTenant(t, p, cookie, &trustTenantA).CheckDeviceTrust(user))
+}
+
+// The Go re-assertion on top of the SQL predicate, for the tenant as for the user: a persister that
+// has lost its tenant predicate and returns clinic A's row to clinic B's flow must still be refused.
+func TestCheckDeviceTrust_RowForAnotherTenantIsRejectedInGo(t *testing.T) {
+	user := uuid.Must(uuid.NewV4())
+	tok := randToken(t)
+
+	svc := newServiceUnderTenant(t, newFakePersister(), deviceTokenPrefix+tok, &trustTenantB)
+	svc.Persister = &unscopedPersister{row: &models.TrustedDevice{
+		ID:          uuid.Must(uuid.NewV4()),
+		UserID:      user,
+		TenantID:    &trustTenantA,
+		DeviceToken: tok,
+		ExpiresAt:   time.Now().Add(time.Hour).UTC(),
+	}}
+
+	assert.False(t, svc.CheckDeviceTrust(user),
+		"a row recorded under another tenant must be rejected in Go even if the query returns it")
 }
 
 // ---- CreateTrustedDevice: expiry derives from config (invariant I2 / A4) ----
@@ -689,4 +782,37 @@ func TestParseDeviceIDCookie(t *testing.T) {
 			assert.Equal(t, tt.wantToken, gotToken)
 		})
 	}
+}
+
+// Under keep_users_global a kept-global user can run a whole login without X-Tenant-ID, and their
+// legacy trust rows carry no tenant. Trust must not skip the second factor there: per-clinic trust
+// would otherwise hold only at relying parties that insist on the session's tenant claim. A
+// tenant-bound user never reaches this with no tenant: the login pins their own tenant. With the
+// flag off, the tenantless flow keeps its legacy trust.
+func TestCheckDeviceTrust_KeptGlobalUsersTenantlessFlowIsNeverTrusted(t *testing.T) {
+	user := uuid.Must(uuid.NewV4())
+	tok := randToken(t)
+	cookie := deviceTokenPrefix + tok
+
+	p := newFakePersister()
+	p.store(user, tok, time.Now().Add(time.Hour).UTC())
+
+	kept := newServiceUnderTenant(t, p, cookie, nil)
+	kept.Cfg.MultiTenant.KeepUsersGlobal = true
+	kept.Cfg.MultiTenant.AllowGlobalUsers = true
+	kept.Cfg.MultiTenant.Enabled = true
+	assert.False(t, kept.CheckDeviceTrust(user), "flag on: a tenantless flow always asks for the second factor")
+
+	off := newServiceUnderTenant(t, p, cookie, nil)
+	off.Cfg.MultiTenant.KeepUsersGlobal = false
+	off.Cfg.MultiTenant.AllowGlobalUsers = true
+	off.Cfg.MultiTenant.Enabled = true
+	assert.True(t, off.CheckDeviceTrust(user), "flag off: a tenantless flow keeps its legacy trust")
+
+	underTenant := newServiceUnderTenant(t, p, cookie, &trustTenantA)
+	underTenant.Cfg.MultiTenant.KeepUsersGlobal = true
+	underTenant.Cfg.MultiTenant.AllowGlobalUsers = true
+	underTenant.Cfg.MultiTenant.Enabled = true
+	require.NoError(t, underTenant.CreateTrustedDevice(user, tok))
+	assert.True(t, underTenant.CheckDeviceTrust(user), "flag on: a flow under a tenant is answered by that tenant's trust")
 }

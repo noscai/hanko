@@ -3,7 +3,6 @@ package device_trust
 import (
 	"github.com/gofrs/uuid"
 	"github.com/teamhanko/hanko/backend/v2/flow_api/flow/shared"
-	"github.com/teamhanko/hanko/backend/v2/flow_api/services"
 	"github.com/teamhanko/hanko/backend/v2/flowpilot"
 )
 
@@ -13,6 +12,10 @@ type ScheduleTrustDeviceState struct {
 
 func (h ScheduleTrustDeviceState) Execute(c flowpilot.HookExecutionContext) error {
 	deps := h.GetDeps(c)
+
+	if deps.Cfg.MultiTenant.KeepUsersGlobal && shared.FlowTenantID(c.Stash(), deps.TenantID) == nil {
+		return nil
+	}
 
 	if !deps.Cfg.MFA.Enabled || deps.Cfg.MFA.DeviceTrustPolicy != "prompt" {
 		return nil
@@ -27,11 +30,7 @@ func (h ScheduleTrustDeviceState) Execute(c flowpilot.HookExecutionContext) erro
 		return nil
 	}
 
-	deviceTrustService := services.DeviceTrustService{
-		Persister:   deps.Persister.GetTrustedDevicePersisterWithConnection(deps.Tx),
-		Cfg:         deps.Cfg,
-		HttpContext: deps.HttpContext,
-	}
+	deviceTrustService := shared.FlowDeviceTrustService(c.Stash(), deps)
 
 	userID := uuid.FromStringOrNil(c.Stash().Get(shared.StashPathUserID).String())
 

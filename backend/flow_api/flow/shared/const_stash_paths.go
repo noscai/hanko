@@ -15,6 +15,7 @@ const (
 	StashPathDeviceTrustGranted                     = "device_trust_granted"
 	StashPathEmail                                  = "email"
 	StashPathEmailVerified                          = "email_verified"
+	StashPathFlowTenantID                           = "flow_tenant_id"
 	StashPathLoginMethod                            = "login_method"
 	StashPathLoginOnboardingCreateEmail             = "login_onboarding_create_email"
 	StashPathLoginOnboardingScheduled               = "login_onboarding_scheduled"

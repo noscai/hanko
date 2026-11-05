@@ -191,6 +191,10 @@ func (c *Config) Validate() error {
 	if err != nil {
 		return fmt.Errorf("failed to validate email settings: %w", err)
 	}
+	err = c.MultiTenant.Validate()
+	if err != nil {
+		return fmt.Errorf("failed to validate multi_tenant settings: %w", err)
+	}
 	return nil
 }
 

@@ -1,0 +1,49 @@
+sql("SET LOCAL lock_timeout = '5s'")
+sql("SELECT set_config('statement_timeout', COALESCE(NULLIF(current_setting('hanko.trust_migration_statement_timeout', true), ''), '30s'), true)")
+sql("DO $$ BEGIN IF (SELECT count(*) FROM trusted_devices WHERE expires_at > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')) > COALESCE(NULLIF(current_setting('hanko.trust_migration_max_live_rows', true), '')::bigint, 50000) AND current_setting('hanko.trusted_device_maintenance', true) IS DISTINCT FROM 'on' THEN RAISE EXCEPTION 'trusted_devices is too large to migrate under live login traffic; drain Hanko and acknowledge maintenance using connection option -c hanko.trusted_device_maintenance=on'; END IF; END $$")
+sql("DELETE FROM trusted_devices WHERE expires_at <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")
+add_column("trusted_devices", "tenant_id", "uuid", {"null": true})
+sql("UPDATE trusted_devices SET tenant_id = users.tenant_id FROM users WHERE trusted_devices.user_id = users.id AND users.tenant_id IS NOT NULL")
+sql("CREATE UNIQUE INDEX trusted_devices_token_user_tenant_idx ON trusted_devices (device_token, user_id, tenant_id) WHERE tenant_id IS NOT NULL")
+sql("CREATE UNIQUE INDEX trusted_devices_token_user_global_idx ON trusted_devices (device_token, user_id) WHERE tenant_id IS NULL")
+# Device trust per clinic (archon#1085 Q15). One Hanko user will sign in to every clinic they
+# belong to, so a trust row records the tenant whose flow created it and answers only that
+# tenant's flows; a NULL row answers only flows that run without a tenant.
+#
+# The UPDATE gives every existing row of a tenant-bound user that user's tenant. Such a user can only
+# be signed in under their own tenant (or with no header at all), so the row was created for that
+# clinic; without it every trusted browser would be asked for a code once after deploy, because
+# login flows send X-Tenant-ID and a NULL row no longer answers them. Rows of global users stay NULL.
+#
+# ADDITIVE ON PURPOSE. trusted_devices_token_user_idx on (device_token, user_id) stays: the previous
+# image upserts with ON CONFLICT (device_token, user_id), which only that index can arbitrate, and it
+# must remain drained until every public replica has been replaced. The new image names no
+# conflict target (TrustedDevicePersister.Create), so it works with this index and without it. While
+# it stands, one browser holds one trust row per user and trust follows the clinic that trusted it
+# last; before keep_users_global is on (task 34) every user belongs to one tenant, so nothing is lost.
+#
+# The two partial indexes are the key once task 34 drops trusted_devices_token_user_idx, so one
+# browser can then hold the same person's trust for two clinics side by side. Postgres treats NULLs
+# as distinct, hence two, the shape of emails_address_tenant_idx / emails_address_global_idx. While
+# the pair index stands they are implied by it, so they can neither fail on existing data nor refuse
+# a write it allows.
+#
+# No foreign key to tenants: a pre-authenticated flow sent without X-Tenant-ID is pinned to the
+# tenant its service token names, which the tenant middleware never looked up, so that tenant need
+# not exist in this database.
+#
+# lock_timeout: add_column takes ACCESS EXCLUSIVE on trusted_devices and holds it, in this one
+# transaction, through the backfill and both index builds. Queued behind a long-running
+# transaction, the migrate would hold every login read behind it; with the timeout it fails after
+# 5 s and the init container retries while the old pods keep serving. SET LOCAL ends with this
+# migration's transaction. Expired rows are pruned before the backfill.
+#
+# Size gate: the lock is held for a time that scales with the live (unexpired) rows, one per browser
+# and user under 7-day trust. Up to 50000 live rows (override with
+# hanko.trust_migration_max_live_rows) the migration runs under live traffic, like
+# 20260828085758_add_trusted_devices_token_user_unique did on this table. Above it, it refuses until
+# login traffic is drained and the connection sets hanko.trusted_device_maintenance=on; such a table
+# may also need hanko.trust_migration_statement_timeout=5min (default 30s).
+#
+# Comments must stay BELOW the sql() calls: .fizz is run through plush.RunScript, and a leading
+# comment corrupts the token stream ("no prefix parse function for ) found").

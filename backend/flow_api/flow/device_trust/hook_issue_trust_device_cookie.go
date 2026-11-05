@@ -1,6 +1,7 @@
 package device_trust
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/teamhanko/hanko/backend/v2/flow_api/flow/shared"
 	"github.com/teamhanko/hanko/backend/v2/flow_api/services"
 	"github.com/teamhanko/hanko/backend/v2/flowpilot"
+	"github.com/teamhanko/hanko/backend/v2/persistence"
 )
 
 // deviceTokenBytes is the entropy behind a device token, base64url-encoded into the cookie (64
@@ -42,6 +44,9 @@ type IssueTrustDeviceCookie struct {
 // keep the per-user growth alive indefinitely.
 func (h IssueTrustDeviceCookie) Execute(c flowpilot.HookExecutionContext) error {
 	deps := h.GetDeps(c)
+	if deps.Cfg.MultiTenant.KeepUsersGlobal && shared.FlowTenantID(c.Stash(), deps.TenantID) == nil {
+		return nil
+	}
 
 	if deps.Cfg.MFA.DeviceTrustPolicy == "never" ||
 		(deps.Cfg.MFA.DeviceTrustPolicy == "prompt" && !c.Stash().Get(shared.StashPathDeviceTrustGranted).Bool()) {
@@ -68,11 +73,8 @@ func (h IssueTrustDeviceCookie) Execute(c flowpilot.HookExecutionContext) error 
 		return nil
 	}
 
-	deviceTrustService := services.DeviceTrustService{
-		Persister:   deps.Persister.GetTrustedDevicePersisterWithConnection(deps.Tx),
-		Cfg:         deps.Cfg,
-		HttpContext: deps.HttpContext,
-	}
+	deviceTrustService := shared.FlowDeviceTrustService(c.Stash(), deps)
+	deviceTrustService.AuthenticatedAt = c.GetFlowCreatedAt()
 
 	deviceToken, err := resolveDeviceToken(deviceTrustService, presentedDeviceCookie(deps))
 	if err != nil {
@@ -80,6 +82,12 @@ func (h IssueTrustDeviceCookie) Execute(c flowpilot.HookExecutionContext) error 
 	}
 
 	if err = deviceTrustService.CreateTrustedDevice(userID, deviceToken); err != nil {
+		// The row this write would refresh was deleted between its statements (an admin
+		// revocation during this login). The browser stays untrusted; the login itself succeeded.
+		if errors.Is(err, persistence.ErrTrustedDeviceNotWritten) {
+			zeroLogger.Warn().Err(err).Msg("no trust row was written for this login; finishing it without trusting the browser")
+			return nil
+		}
 		return fmt.Errorf("failed to store trusted device: %w", err)
 	}
 

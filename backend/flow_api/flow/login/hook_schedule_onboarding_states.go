@@ -5,7 +5,6 @@ import (
 	"github.com/gofrs/uuid"
 	"github.com/teamhanko/hanko/backend/v2/flow_api/flow/device_trust"
 	"github.com/teamhanko/hanko/backend/v2/flow_api/flow/shared"
-	"github.com/teamhanko/hanko/backend/v2/flow_api/services"
 	"github.com/teamhanko/hanko/backend/v2/flowpilot"
 )
 
@@ -20,6 +19,18 @@ func (h ScheduleOnboardingStates) Execute(c flowpilot.HookExecutionContext) erro
 
 	if err := c.Stash().Set(shared.StashPathLoginOnboardingScheduled, true); err != nil {
 		return fmt.Errorf("failed to set login_onboarding_scheduled to the stash: %w", err)
+	}
+
+	// Device trust is decided below under the flow tenant, but issued, with the session, by a later
+	// request that sends its own X-Tenant-ID. Pin the tenant now so the trust decided here, the trust
+	// row written and the session's tenant claim are the same clinic's (archon#1085 Q15, Q18). A
+	// pre-authenticated flow is already pinned to its service token's tenant; this keeps that.
+	flowTenantID, err := h.flowTenantID(c)
+	if err != nil {
+		return err
+	}
+	if err := shared.PinFlowTenantID(c.Stash(), flowTenantID); err != nil {
+		return fmt.Errorf("failed to pin the flow tenant: %w", err)
 	}
 
 	mfaUsageStates := h.determineMFAUsageStates(c)
@@ -37,13 +48,34 @@ func (h ScheduleOnboardingStates) Execute(c flowpilot.HookExecutionContext) erro
 	c.ScheduleStates(userDetailOnboardingStates...)
 	c.ScheduleStates(credentialOnboardingStates...)
 
-	err := c.ExecuteHook(device_trust.ScheduleTrustDeviceState{})
+	err = c.ExecuteHook(device_trust.ScheduleTrustDeviceState{})
 	if err != nil {
 		return err
 	}
 
 	c.ScheduleStates(shared.StateSuccess)
 	return nil
+}
+
+// flowTenantID is the tenant to pin: a tenant-bound user's own tenant, otherwise the flow's.
+// The session names a bound user's own tenant whatever the request sent (session.WithFlowTenant
+// never replaces it), and a bound user can run a header-less login, so pinning the request's
+// tenant there would decide and write their trust under no tenant while the session names theirs.
+func (h ScheduleOnboardingStates) flowTenantID(c flowpilot.HookExecutionContext) (*uuid.UUID, error) {
+	deps := h.GetDeps(c)
+
+	userID := uuid.FromStringOrNil(c.Stash().Get(shared.StashPathUserID).String())
+	if !userID.IsNil() {
+		user, err := deps.Persister.GetUserPersisterWithConnection(deps.Tx).Get(userID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load the user to pin the flow tenant: %w", err)
+		}
+		if user != nil && user.TenantID != nil {
+			return user.TenantID, nil
+		}
+	}
+
+	return shared.FlowTenantID(c.Stash(), deps.TenantID), nil
 }
 
 func (h ScheduleOnboardingStates) determineMFAUsageStates(c flowpilot.HookExecutionContext) []flowpilot.StateName {
@@ -59,11 +91,7 @@ func (h ScheduleOnboardingStates) determineMFAUsageStates(c flowpilot.HookExecut
 		return result
 	}
 
-	deviceTrustService := services.DeviceTrustService{
-		Persister:   deps.Persister.GetTrustedDevicePersisterWithConnection(deps.Tx),
-		Cfg:         deps.Cfg,
-		HttpContext: deps.HttpContext,
-	}
+	deviceTrustService := shared.FlowDeviceTrustService(c.Stash(), deps)
 
 	userID := uuid.FromStringOrNil(c.Stash().Get(shared.StashPathUserID).String())
 

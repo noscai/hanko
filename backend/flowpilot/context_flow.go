@@ -2,6 +2,7 @@ package flowpilot
 
 import (
 	"github.com/gofrs/uuid"
+	"time"
 )
 
 // defaultFlowContext is the default implementation of the flowContext interface.
@@ -16,6 +17,10 @@ type defaultFlowContext struct {
 // GetFlowID returns the unique ID of the current flow.
 func (fc *defaultFlowContext) GetFlowID() uuid.UUID {
 	return fc.flowModel.ID
+}
+
+func (fc *defaultFlowContext) GetFlowCreatedAt() time.Time {
+	return fc.flowModel.CreatedAt
 }
 
 // GetInitialState returns the initial state of the flow.

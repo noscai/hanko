@@ -241,3 +241,50 @@ func TestGenerator_DeleteCookie(t *testing.T) {
 	assert.Equal(t, -1, cookie.MaxAge)
 	assert.Equal(t, "hanko", cookie.Name)
 }
+
+// archon#1085 6.2 #15. A user kept global (multi_tenant.keep_users_global) has no tenant_id of
+// their own, so before this change their session named no tenant at all and clinic-os could not
+// tell which clinic's flow -- and which clinic's device trust -- produced it. The session must name
+// the flow's tenant for them, while an adopted user keeps the tenant their row already carries.
+func TestGenerateJWT_GlobalUserSessionNamesFlowTenant(t *testing.T) {
+	flowTenant := "bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb"
+	userTenant := "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa"
+
+	mgr, err := NewManager(&test.JwkManager{}, config.Config{Session: config.Session{Lifespan: "5m", JWTTemplate: &config.JWTTemplate{Claims: map[string]interface{}{"tenant_id": "stale-template-tenant"}}}})
+	require.NoError(t, err)
+
+	t.Run("a global user's session names the flow tenant", func(t *testing.T) {
+		_, token, err := mgr.GenerateJWT(
+			dto.UserJWT{UserID: uuid.Must(uuid.NewV4()).String()},
+			WithFlowTenant(flowTenant),
+		)
+		require.NoError(t, err)
+
+		tenant, ok := token.Get("tenant_id")
+		require.True(t, ok, "a global user's session must carry a tenant_id claim")
+		assert.Equal(t, flowTenant, tenant)
+	})
+
+	t.Run("an adopted user's session keeps the user's own tenant", func(t *testing.T) {
+		_, token, err := mgr.GenerateJWT(
+			dto.UserJWT{UserID: uuid.Must(uuid.NewV4()).String(), TenantID: &userTenant},
+			WithFlowTenant(flowTenant),
+		)
+		require.NoError(t, err)
+
+		tenant, ok := token.Get("tenant_id")
+		require.True(t, ok)
+		assert.Equal(t, userTenant, tenant, "the flow tenant must never replace the user's own tenant")
+	})
+
+	t.Run("a flow without a tenant leaves a global user's session without one", func(t *testing.T) {
+		_, token, err := mgr.GenerateJWT(
+			dto.UserJWT{UserID: uuid.Must(uuid.NewV4()).String()},
+			WithFlowTenant(""),
+		)
+		require.NoError(t, err)
+
+		_, ok := token.Get("tenant_id")
+		assert.False(t, ok)
+	})
+}

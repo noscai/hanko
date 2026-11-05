@@ -175,6 +175,89 @@ func TestResolveServiceTokenUser_AdoptsGlobalUser(t *testing.T) {
 	assert.Equal(t, tenantA, *user.TenantID, "the returned user must carry the adopted tenant")
 }
 
+// keep_users_global (archon#1085 task 16): one person's identity serves every clinic they belong
+// to. Adopting them into the first tenant that pre-authenticates them would make the next clinic's
+// step-up fail the boundary, so the user stays global and each tenant's flow still resolves them.
+func TestResolveServiceTokenUser_KeepsGlobalUserGlobalAcrossTenants(t *testing.T) {
+	lookup := &fakeUserLookup{user: &models.User{ID: userID, TenantID: nil}}
+	cfg := multiTenantOn()
+	cfg.KeepUsersGlobal = true
+
+	for _, tenant := range []uuid.UUID{tenantA, tenantB} {
+		user, err := resolveServiceTokenUser(claimsFor(userID, tenant.String()), lookup, &tenant, cfg)
+
+		require.NoError(t, err)
+		require.NotNil(t, user)
+		assert.Nil(t, user.TenantID, "the identity must stay global")
+	}
+	assert.Equal(t, 0, lookup.adoptCalls, "no tenant may adopt a kept-global user")
+}
+
+// Under keep_users_global a global user has no row tenant for the claim to be checked against, so
+// claim == X-Tenant-ID is the only tenant check left on this path. A token signed for tenant A sent
+// under tenant B's header must still be refused, indistinguishably from a missing user.
+func TestResolveServiceTokenUser_KeptGlobalUserRefusedWhenRequestTenantDiffers(t *testing.T) {
+	lookup := &fakeUserLookup{user: &models.User{ID: userID, TenantID: nil}}
+	cfg := multiTenantOn()
+	cfg.KeepUsersGlobal = true
+
+	user, err := resolveServiceTokenUser(claimsFor(userID, tenantA.String()), lookup, &tenantB, cfg)
+
+	require.EqualError(t, err, "user not found")
+	assert.Nil(t, user)
+	assert.Zero(t, lookup.adoptCalls)
+}
+
+// rereadFailingLookup adopts like fakeUserLookup, then fails the re-read that follows the
+// adoption: the row vanished (rereadUser nil) or the database did (rereadErr).
+type rereadFailingLookup struct {
+	*fakeUserLookup
+	gets       int
+	rereadUser *models.User
+	rereadErr  error
+}
+
+func (f *rereadFailingLookup) Get(id uuid.UUID) (*models.User, error) {
+	f.gets++
+	if f.gets == 1 {
+		return f.fakeUserLookup.Get(id)
+	}
+	return f.rereadUser, f.rereadErr
+}
+
+// After adopting a global user the resolver re-reads the row to re-check the boundary (cubic P1).
+// If that read fails or finds no row, the user must be refused -- indistinguishably from a missing
+// one -- rather than pre-authenticated from the stale in-memory model.
+func TestResolveServiceTokenUser_RefusesWhenTheAdoptedUserCannotBeReRead(t *testing.T) {
+	for name, lookup := range map[string]*rereadFailingLookup{
+		"the re-read fails":       {rereadErr: errors.New("connection reset")},
+		"the row is gone by then": {rereadUser: nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			lookup.fakeUserLookup = &fakeUserLookup{user: &models.User{ID: userID, TenantID: nil}}
+
+			user, err := resolveServiceTokenUser(claimsFor(userID, tenantA.String()), lookup, &tenantA, multiTenantOn())
+
+			require.EqualError(t, err, "user not found")
+			assert.Nil(t, user)
+			assert.Equal(t, 1, lookup.adoptCalls)
+			assert.Equal(t, 2, lookup.gets, "the adopted user must be read again")
+		})
+	}
+}
+
+// serviceTokenFlowTenant runs only on claims resolveServiceTokenUser accepted. It still pins no
+// tenant rather than a wrong one when the claim cannot be a tenant, and pins none at all on a
+// single-tenant deployment, where no request carries a tenant either.
+func TestServiceTokenFlowTenant(t *testing.T) {
+	assert.Nil(t, serviceTokenFlowTenant(claimsFor(userID, uuid.Nil.String()), multiTenantOn()), "the nil UUID is not a tenant")
+	claims := claimsFor(userID, tenantB.String())
+	assert.Equal(t, &tenantB, serviceTokenFlowTenant(claims, multiTenantOn()))
+	assert.Nil(t, serviceTokenFlowTenant(claims, multiTenantOff()), "a single-tenant deployment pins no tenant")
+	assert.Nil(t, serviceTokenFlowTenant(claimsFor(userID, "not-a-uuid"), multiTenantOn()),
+		"a claim that is not a tenant id must not become one")
+}
+
 func TestResolveServiceTokenUser_FailsWhenAdoptionFails(t *testing.T) {
 	lookup := &fakeUserLookup{
 		user:     &models.User{ID: userID, TenantID: nil},

@@ -2,6 +2,8 @@
 
 This guide covers how to run the updated Hanko with multi-tenant support in Docker and test the feature.
 
+**Database prerequisite: PostgreSQL.** This fork's multi-tenant schema uses PostgreSQL partial unique indexes since migration `20260120000003_change_unique_constraints`; the trust migrations also use PostgreSQL transaction settings and timestamps. Upstream MySQL/MariaDB configuration options do not make this fork's migration chain portable to those dialects. The integration suites exercise PostgreSQL.
+
 ## Table of Contents
 - [Quick Reference Commands](#quick-reference-commands)
 - [Step-by-Step Deployment](#step-by-step-deployment)
@@ -176,6 +178,69 @@ When a global user (existing user with `tenant_id = NULL`) logs in with an `X-Te
 
 This ensures seamless migration without requiring users to re-register.
 
+Adoption is skipped when `keep_users_global: true`: the user found via the global fallback stays
+global (`tenant_id = NULL`) and logs in to every tenant they belong to with the same identity. Users
+adopted before the option was turned on stay adopted (un-adopting them is a separate data
+migration). Fresh registrations and their credentials are also global; the request tenant
+still scopes the flow and session proof.
+
+> **Do not enable `keep_users_global` on a running deployment without its rollout.** Two things
+> must come first:
+> 1. **Sessions must carry the flow tenant.** A kept-global user has no `tenant_id`, so their
+>    session JWT names the flow's tenant instead: the `X-Tenant-ID` the flow ran under, or, for a
+>    pre-authenticated flow, the tenant its service token names. A relying party that checks the
+>    claim (ClinicOS does) refuses sessions without one. Every Hanko pod must run a version with
+>    migration `20261101235835_add_trusted_devices_tenant_id` before the flag is turned on
+>    (ClinicOS: archon#1085 task 17).
+> 2. **Users must be un-adopted, one way.** Already-adopted users stay bound until they are
+>    un-adopted (`tenant_id = NULL` on the user and related rows). That data step can't be undone
+>    by turning the flag off again, and it can collide with the global unique email index. Run it
+>    from a reviewed runbook, after a verified database snapshot, with before/after counts
+>    (ClinicOS: archon#1085 task 34). It leaves `trusted_devices.tenant_id` untouched: each trust
+>    row keeps the clinic that trusted it, and setting it to `NULL` would turn every clinic's trust
+>    into tenantless trust. It deletes the un-adopted users' trust rows that have no tenant instead
+>    of creating new ones. With the flag on, a flow without a tenant never skips the second factor.
+
+**Device trust is per tenant.** A trusted browser (`trusted_devices`) records the tenant whose
+flow trusted it and skips the second factor only in that tenant's flows. A flow's tenant is fixed
+when the credential step completes (or, for a pre-authenticated flow, when its service token is
+accepted): a later request with another `X-Tenant-ID` does not move it. A tenant-bound user's flow
+runs under their own tenant even without the header, the tenant their session names. Rows
+without a tenant answer only flows without one; the migration gives existing rows of tenant-bound
+users their user's tenant. The migration is additive, so pods of the previous image keep working
+during the rollout and after an image rollback.
+
+Per-tenant trust is not behind `keep_users_global`: it applies on every deployment running this
+version, with the flag off too. With the flag off it changes four things, none of them a weaker
+check:
+
+1. A global user's trust rows have no tenant, so they stop answering flows sent with
+   `X-Tenant-ID`. Each browser such a user trusted asks for the code once more, then is trusted
+   for that tenant. (A global user adopted to a tenant on login takes their trust rows along.)
+2. Rows written by a pod of the previous image during the rollout have no tenant, so a
+   tenant-bound user who trusted a browser in that window is asked for the code once more.
+   Re-run the migration's backfill once each cluster's rollout is complete and no old pod is
+   left:
+   `UPDATE trusted_devices SET tenant_id = users.tenant_id FROM users WHERE trusted_devices.user_id = users.id AND users.tenant_id IS NOT NULL AND trusted_devices.tenant_id IS NULL`.
+3. A tenant-bound user who alternated header-less and headered flows would have had their one
+   trust row moved between no tenant and their tenant, and been asked every time. Their flows
+   now always run under their own tenant, so this no longer happens.
+4. In paths that never adopt a user (passkey login, token exchange), a global user's session
+   now names the request's tenant where it named none.
+
+It ships in two steps. This version keeps the `(device_token, user_id)` unique index, so one browser
+holds one trust row per user and trust follows the clinic that trusted it last; while every user
+belongs to one tenant, nothing is lost. Before `keep_users_global` is turned on, and only once no pod
+of an older image is left, the index is dropped by a migration that ships with that change
+(ClinicOS: archon#1085 task 34), never by hand, so fresh databases and tests keep the clusters'
+schema. Its up is `DROP INDEX IF EXISTS trusted_devices_token_user_idx`; its down deletes all but
+the latest-expiring row of each `(device_token, user_id)` and recreates the unique index. From then
+on one browser holds a separate trust per clinic, with no code change.
+
+> **Rollback floor.** Once that migration has run, a Hanko image older than this version can no
+> longer be rolled back to: it upserts with `ON CONFLICT (device_token, user_id)`, which has no
+> arbiter without the index, so every trust write fails. Run the migration's down first.
+
 ### Verify Migration Success
 
 Check the logs to ensure migrations ran successfully:
@@ -191,6 +256,28 @@ You should see output indicating the migrations were applied:
 [migrate] Applied migration: 20260120000003_change_unique_constraints
 ```
 
+#### Trusted-device migrations on Kubernetes
+
+On the ClinicOS clusters there is no separate migration job: `hanko-migrate` is an initContainer
+of the `hanko` Deployment and runs `/hanko migrate up` with the same Vault-rendered `hanko-db`
+Secret the server uses. Under the Deployment's rolling update, a failed migration leaves the new
+pod in `Init:CrashLoopBackOff` while the old pods keep serving, and every later image waits behind
+it, so check these two migrations' preconditions before rolling out the image:
+
+- `20261103055553_add_trusted_device_revocations` needs no drain. Deploy it before the backend that
+  calls the revocation route (https://github.com/noscai/clinic-os/pull/8469); a revocation made before every Hanko pod runs this
+  image could be undone by an old pod re-trusting the browser.
+- `20261101235835_add_trusted_devices_tenant_id` holds an exclusive lock on `trusted_devices`
+  through its backfill and index builds, so it refuses when more than 50000 live (unexpired) rows
+  exist. Check before each cluster's rollout:
+  `SELECT count(*) FROM trusted_devices WHERE expires_at > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`.
+  Below the threshold it runs under live traffic: lock waits stop after five seconds and each
+  statement after thirty, and the initContainer retries. Above it, drain login traffic first,
+  then add PostgreSQL connection option `-c hanko.trusted_device_maintenance=on` (and, for a
+  measured large table, `-c hanko.trust_migration_statement_timeout=5min`) to the
+  initContainer's database URL for that rollout only; the threshold itself can be changed with
+  `-c hanko.trust_migration_max_live_rows=<n>`. Expired rows are pruned first and never counted.
+
 ---
 
 ## Configuration
@@ -203,6 +290,7 @@ You should see output indicating the migrations were applied:
 | `tenant_header` | `X-Tenant-ID` | HTTP header name for tenant ID |
 | `allow_global_users` | `true` | Allow users without tenant (backward compatible) |
 | `auto_provision` | `true` | Auto-create tenant if ID doesn't exist |
+| `keep_users_global` | `false` | Keep global users global on login instead of adopting them into the login tenant; requires `allow_global_users: true` (env: `MULTI_TENANT_KEEP_USERS_GLOBAL`) |
 
 ### Example Configurations
 

@@ -84,17 +84,22 @@ func (f *fakeTrustedDevicePersister) FindByDeviceToken(token string) (*models.Tr
 // FindValidTrust answers from the rows this fake has actually stored, so a test can feed the
 // cookie the hook emitted straight back into CheckDeviceTrust and see whether the write path and
 // the read path agree.
-func (f *fakeTrustedDevicePersister) FindValidTrust(token string, userID uuid.UUID, now time.Time) (*models.TrustedDevice, error) {
+func (f *fakeTrustedDevicePersister) FindValidTrust(token string, userID uuid.UUID, tenantID *uuid.UUID, now time.Time) (*models.TrustedDevice, error) {
 	if f.findErr != nil {
 		return nil, f.findErr
 	}
 	for i := range f.created {
 		row := f.created[i]
-		if row.DeviceToken == token && row.UserID == userID && row.ExpiresAt.After(now) {
+		if row.DeviceToken == token && row.UserID == userID && row.MatchesTenant(tenantID) && row.ExpiresAt.After(now) {
 			return &row, nil
 		}
 	}
 	return nil, nil
+}
+
+// DeleteByUserID is the admin 2FA-reset path; the device-trust login flow never calls it.
+func (f *fakeTrustedDevicePersister) DeleteByUserID(uuid.UUID) error {
+	return nil
 }
 
 // fakeTrustPersister satisfies persistence.Persister via embedding; only the accessor the hook
@@ -123,6 +128,19 @@ func (f *fakeIssueCookieCtx) Get(key string) interface{} {
 func newIssueCookieCtx(deps *shared.Dependencies) *fakeIssueCookieCtx {
 	backing := flowpilot.NewMockHookExecutionContext()
 	return &fakeIssueCookieCtx{HookExecutionContext: backing, deps: deps}
+}
+
+func TestIssueTrustDeviceCookie_TenantlessGlobalFlowWritesNothing(t *testing.T) {
+	p := &fakeTrustedDevicePersister{}
+	deps, rec := trustDeps("always", time.Hour, p, "")
+	deps.Cfg.MultiTenant.Enabled = true
+	deps.Cfg.MultiTenant.AllowGlobalUsers = true
+	deps.Cfg.MultiTenant.KeepUsersGlobal = true
+	c := newIssueCookieCtx(deps)
+	require.NoError(t, c.Stash().Set(shared.StashPathUserID, uuid.Must(uuid.NewV4()).String()))
+	require.NoError(t, (IssueTrustDeviceCookie{}).Execute(c))
+	assert.Empty(t, p.created)
+	assert.Empty(t, writtenCookies(rec))
 }
 
 func trustDeps(policy string, duration time.Duration, persister persistence.TrustedDevicePersister, legacyCookie string) (*shared.Dependencies, *httptest.ResponseRecorder) {
@@ -649,4 +667,53 @@ func TestIssueTrustDeviceCookie_Execute_ByteGuardNeverFiresUnderV2Format(t *test
 			assert.Empty(t, logOutput, "the byte guard must not fire under the v2 format at %d existing users", existingUsers)
 		})
 	}
+}
+
+// The trust row is written under the tenant the flow pinned when it decided trust, not under the
+// X-Tenant-ID of the request that happens to finish the flow. Written under the last request's
+// header, a flow whose code was skipped by clinic B's trust would mint clinic A's trust with no
+// second factor asked (archon#1085 6.2 #20). Covers both policies that write trust.
+func TestIssueTrustDeviceCookie_Execute_WritesTrustUnderThePinnedFlowTenant(t *testing.T) {
+	for name, policy := range map[string]string{
+		"always":         "always",
+		"prompt granted": "prompt",
+	} {
+		t.Run(name, func(t *testing.T) {
+			pinnedTenant := uuid.Must(uuid.NewV4())
+			requestTenant := uuid.Must(uuid.NewV4())
+			persister := &fakeTrustedDevicePersister{}
+			deps, rec := trustDeps(policy, 168*time.Hour, persister, "")
+			deps.TenantID = &requestTenant
+			ctx := newIssueCookieCtx(deps)
+			require.NoError(t, ctx.Stash().Set(shared.StashPathUserID, uuid.Must(uuid.NewV4()).String()))
+			require.NoError(t, ctx.Stash().Set(shared.StashPathDeviceTrustGranted, true))
+			require.NoError(t, shared.PinFlowTenantID(ctx.Stash(), &pinnedTenant))
+
+			err := IssueTrustDeviceCookie{}.Execute(ctx)
+
+			require.NoError(t, err)
+			requireSingleDeviceCookie(t, rec)
+			require.Len(t, persister.created, 1)
+			require.NotNil(t, persister.created[0].TenantID)
+			assert.Equal(t, pinnedTenant, *persister.created[0].TenantID,
+				"the trust row must name the flow's pinned tenant, not the finishing request's X-Tenant-ID")
+		})
+	}
+}
+
+// A trust write that finds no row to insert or update (an admin revocation deleted the row inside
+// this login's window) costs the browser its trust, not the login: the flow finishes without the
+// trust cookie. Any other persist failure still fails the flow (ErrorsWhenPersistFails).
+func TestIssueTrustDeviceCookie_Execute_FinishesWithoutTrustWhenNoRowWasWritten(t *testing.T) {
+	persister := &fakeTrustedDevicePersister{createErr: fmt.Errorf("failed to store trustedDevice: %w", persistence.ErrTrustedDeviceNotWritten)}
+	deps, rec := trustDeps("always", 168*time.Hour, persister, "")
+	ctx := newIssueCookieCtx(deps)
+	require.NoError(t, ctx.Stash().Set(shared.StashPathUserID, uuid.Must(uuid.NewV4()).String()))
+
+	var err error
+	logs := captureWarnLogs(t, func() { err = IssueTrustDeviceCookie{}.Execute(ctx) })
+
+	require.NoError(t, err)
+	assert.Empty(t, writtenCookies(rec), "no trust cookie may point at a row that was not written")
+	assert.Contains(t, logs, "no trust row was written")
 }

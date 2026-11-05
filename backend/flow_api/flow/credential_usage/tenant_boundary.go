@@ -16,10 +16,19 @@ import (
 // Postgres into what is pure decision logic. The boundary is the most security-relevant rule on
 // this path; it has to be assertable without a database.
 //
-// The load-bearing check is user.TenantID == claims.TenantID. Both are server-side truths: the
-// claim is HMAC-signed by clinic-os and cannot be forged without the shared secret, and the user
-// row is the database. The request tenant (X-Tenant-ID) is NOT load-bearing -- the client sets
-// that header and may omit it entirely -- so it is only ever checked as defense in depth.
+// For a tenant-bound user the load-bearing check is user.TenantID == claims.TenantID. Both are
+// server-side truths: the claim is HMAC-signed by clinic-os and cannot be forged without the shared
+// secret, and the user row is the database. The request tenant (X-Tenant-ID) is NOT load-bearing
+// for them -- the client sets that header and may omit it entirely -- so it is only ever checked
+// as defense in depth.
+//
+// A global user (tenant_id IS NULL) has no row tenant to compare. Without keep_users_global they
+// are adopted into the claimed tenant on first use, and the check above binds them from then on.
+// Under keep_users_global they are never adopted, so they are bound only by the signed claim and,
+// when the header is sent, by claim == X-Tenant-ID: a token naming any tenant is accepted for them.
+// Which clinics such a user belongs to is decided by clinic-os, which signs the claim, and the
+// flow is then pinned to the claimed tenant (serviceTokenFlowTenant), so its device trust and the
+// session it issues are that clinic's.
 func validateTenantBoundary(
 	claims *ServiceTokenClaims,
 	user *models.User,
@@ -45,8 +54,9 @@ func validateTenantBoundary(
 
 	// A global user (tenant_id IS NULL) is legitimate under allow_global_users, which is what
 	// production configures. Rejecting them here would lock every legacy user out of login. The
-	// caller adopts them into the claimed tenant instead -- see shouldAdoptGlobalUser, mirroring
-	// action_password_login.go.
+	// caller adopts them into the claimed tenant instead (see shouldAdoptGlobalUser, mirroring
+	// action_password_login.go), unless keep_users_global is on: then they stay global, and the
+	// claim == request-tenant check above is the only tenant check they get here.
 	if user.TenantID == nil {
 		if !cfg.AllowGlobalUsers {
 			return fmt.Errorf("user has no tenant and global users are disabled")
@@ -66,12 +76,16 @@ func validateTenantBoundary(
 //
 // Split from validateTenantBoundary so the boundary stays a pure decision: adoption writes to the
 // database and therefore belongs with the lookup.
+//
+// Under keep_users_global a global user is never adopted, the same rule as the password and
+// login-identifier flows (shouldAdoptUserToTenant): their identity serves every clinic they
+// belong to, and an adoption here would lock them out of the next clinic's step-up.
 func shouldAdoptGlobalUser(
 	user *models.User,
 	claimsTenantID string,
 	cfg config.MultiTenant,
 ) (bool, uuid.UUID) {
-	if !cfg.Enabled || user.TenantID != nil {
+	if !cfg.Enabled {
 		return false, uuid.Nil
 	}
 
@@ -80,7 +94,34 @@ func shouldAdoptGlobalUser(
 		return false, uuid.Nil
 	}
 
-	return true, tenant
+	return shouldAdoptUserToTenant(user.TenantID == nil, &tenant, cfg.KeepUsersGlobal), tenant
+}
+
+// serviceTokenFlowTenant returns the tenant a pre-authenticated flow runs under: the one the
+// service token names (archon#1085 Q18). Call it only with claims resolveServiceTokenUser has
+// accepted: by then the claim is a well-formed tenant equal to the request tenant when a header
+// was sent, and to the user's own tenant when they have one.
+//
+// It matters for a user kept global. They have no row tenant, and the admin app may send no
+// X-Tenant-ID, so without the pin the flow ran under no tenant: device trust from a legacy row
+// skipped the second factor, and the session named no clinic. Pinning to the claim also covers a
+// tenant-bound user's flow sent without the header, whose claim is their own tenant.
+//
+// A header-less pre-authenticated flow's tenant therefore comes from clinic-os's signed claim
+// alone: unlike a header, it never passes the tenant middleware, so Hanko does not check that the
+// tenant exists or that tenant.enabled is set. clinic-os refuses suspended tenants itself, and the
+// same flow skipped the middleware's gate before (it ran with no tenant).
+func serviceTokenFlowTenant(claims *ServiceTokenClaims, cfg config.MultiTenant) *uuid.UUID {
+	if !cfg.Enabled {
+		return nil
+	}
+
+	tenant, err := uuid.FromString(claims.TenantID)
+	if err != nil || tenant.IsNil() {
+		return nil
+	}
+
+	return &tenant
 }
 
 // serviceTokenUserLookup is the slice of persistence resolveServiceTokenUser needs. Narrow by

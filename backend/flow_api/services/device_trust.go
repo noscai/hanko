@@ -51,6 +51,10 @@ type DeviceTrustService struct {
 	Persister   persistence.TrustedDevicePersister
 	Cfg         config.Config
 	HttpContext echo.Context
+	// TenantID is the tenant the flow runs under (shared.FlowTenantID). Trust is written under it
+	// and answers only it (archon#1085 Q15); nil is a flow without a tenant.
+	TenantID        *uuid.UUID
+	AuthenticatedAt time.Time
 }
 
 func (s DeviceTrustService) CreateTrustedDevice(userID uuid.UUID, deviceToken string) error {
@@ -60,12 +64,14 @@ func (s DeviceTrustService) CreateTrustedDevice(userID uuid.UUID, deviceToken st
 	}
 
 	trustedDeviceModel := models.TrustedDevice{
-		ID:          deviceID,
-		UserID:      userID,
-		DeviceToken: deviceToken,
-		ExpiresAt:   time.Now().Add(s.Cfg.MFA.DeviceTrustDuration).UTC(),
-		CreatedAt:   time.Now().UTC(),
-		UpdatedAt:   time.Now().UTC(),
+		AuthenticatedAt: s.AuthenticatedAt,
+		ID:              deviceID,
+		UserID:          userID,
+		TenantID:        s.TenantID,
+		DeviceToken:     deviceToken,
+		ExpiresAt:       time.Now().Add(s.Cfg.MFA.DeviceTrustDuration).UTC(),
+		CreatedAt:       time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
 	}
 
 	err = s.Persister.Create(trustedDeviceModel)
@@ -92,8 +98,18 @@ func (s DeviceTrustService) CreateTrustedDevice(userID uuid.UUID, deviceToken st
 //
 // Fails closed at branch granularity: a persister error is a false for that branch only, never a
 // true and never a panic.
+//
+// Under multi_tenant.keep_users_global a flow with no tenant is never trusted. A kept-global user
+// can run a whole login without X-Tenant-ID, and their pre-migration rows carry no tenant, so
+// tenantless trust would skip the factor and leave per-clinic trust to whichever relying party
+// insists on the session's tenant claim. A tenant-bound user's login pins their own tenant, so
+// only a global user reaches this with no tenant.
 func (s DeviceTrustService) CheckDeviceTrust(userID uuid.UUID) bool {
 	if userID.IsNil() || s.Cfg.MFA.DeviceTrustPolicy == "never" {
+		return false
+	}
+
+	if s.TenantID == nil && s.Cfg.MultiTenant.KeepUsersGlobal {
 		return false
 	}
 
@@ -161,20 +177,22 @@ func (s DeviceTrustService) checkLegacy(userID uuid.UUID, now time.Time) bool {
 }
 
 // hasValidTrust is the one place where a nominated token becomes trust. The persister filters
-// (device_token, user_id, expires_at > now) in SQL and returns the row; the row's user is then
-// re-asserted here in Go.
+// (device_token, user_id, tenant, expires_at > now) in SQL and returns the row; the row's user and
+// tenant are then re-asserted here in Go.
 //
 // The redundancy is deliberate and load-bearing. One device_token is now shared by every user who
 // has trusted the browser, so a dropped user_id predicate in that query would not merely widen a
 // lookup -- it would hand every user on a shared device a second-factor bypass the moment one of
-// them trusted it. A field comparison is cheap enough to keep as a standing assertion against
-// that.
+// them trusted it. The tenant is the same argument one level up: one Hanko user signs in to every
+// clinic they belong to, so a dropped tenant predicate would let trust recorded under one clinic
+// skip every other clinic's code. A field comparison is cheap enough to keep as a standing
+// assertion against both.
 func (s DeviceTrustService) hasValidTrust(deviceToken string, userID uuid.UUID, now time.Time) bool {
-	trustedDevice, err := s.Persister.FindValidTrust(deviceToken, userID, now)
+	trustedDevice, err := s.Persister.FindValidTrust(deviceToken, userID, s.TenantID, now)
 	if err != nil || trustedDevice == nil {
 		return false
 	}
-	return trustedDevice.UserID == userID
+	return trustedDevice.UserID == userID && trustedDevice.MatchesTenant(s.TenantID)
 }
 
 func (s DeviceTrustService) GenerateRandomToken(length int) (string, error) {

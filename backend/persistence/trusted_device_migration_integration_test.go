@@ -8,12 +8,15 @@ package persistence_test
 // test needs are unexported, so the external package works without issue.
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gofrs/uuid"
 	"github.com/stretchr/testify/suite"
+	"github.com/teamhanko/hanko/backend/v2/config"
+	"github.com/teamhanko/hanko/backend/v2/persistence"
 	"github.com/teamhanko/hanko/backend/v2/persistence/models"
 	"github.com/teamhanko/hanko/backend/v2/test"
 )
@@ -40,9 +43,82 @@ type trustedDeviceMigrationSuite struct {
 	test.Suite
 }
 
+func (s *trustedDeviceMigrationSuite) connectWithOptions(options string) persistence.Storage {
+	u, err := url.Parse(s.DB.DatabaseUrl)
+	s.Require().NoError(err)
+	q := u.Query()
+	q.Set("options", options)
+	u.RawQuery = q.Encode()
+	storage, err := persistence.New(config.Database{Url: u.String()})
+	s.Require().NoError(err)
+	return storage
+}
+
 // fixtureUserID matches test/fixtures/user/users.yaml, loaded below to
 // satisfy trusted_devices.user_id's FK to users.id.
 const fixtureUserID = "b5dd5267-b462-48be-b70d-bcd6f1bbe7a5"
+
+func (s *trustedDeviceMigrationSuite) TestTenantMigration_RunsUnderLiveTrafficBelowTheSizeGate() {
+	if testing.Short() {
+		s.T().Skip("requires disposable PostgreSQL")
+	}
+	s.Require().NoError(s.Storage.MigrateDown(2))
+	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
+	_, err := s.insertTrustedDevice(strings.Repeat("m", 64), uuid.FromStringOrNil(fixtureUserID), time.Now().UTC().Add(time.Hour))
+	s.Require().NoError(err)
+	s.Require().NoError(s.Storage.MigrateUp(), "a cluster below the size gate migrates without a drain")
+}
+
+func (s *trustedDeviceMigrationSuite) TestTenantMigration_RefusesAboveTheSizeGateWithoutMaintenanceAcknowledgement() {
+	if testing.Short() {
+		s.T().Skip("requires disposable PostgreSQL")
+	}
+	s.Require().NoError(s.Storage.MigrateDown(2))
+	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
+	_, err := s.insertTrustedDevice(strings.Repeat("m", 64), uuid.FromStringOrNil(fixtureUserID), time.Now().UTC().Add(time.Hour))
+	s.Require().NoError(err)
+	overGate := s.connectWithOptions("-c hanko.trust_migration_max_live_rows=0")
+	defer overGate.GetConnection().Close()
+	s.Require().ErrorContains(overGate.MigrateUp(), "too large to migrate under live login traffic")
+	acknowledged := s.connectWithOptions("-c hanko.trust_migration_max_live_rows=0 -c hanko.trusted_device_maintenance=on")
+	defer acknowledged.GetConnection().Close()
+	s.Require().NoError(acknowledged.MigrateUp(), "explicit maintenance acknowledgement permits the same migration")
+}
+
+func (s *trustedDeviceMigrationSuite) TestTenantMigration_SizeGateCountsOnlyLiveTrust() {
+	if testing.Short() {
+		s.T().Skip("requires disposable PostgreSQL")
+	}
+	s.Require().NoError(s.Storage.MigrateDown(2))
+	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
+	_, err := s.insertTrustedDevice(strings.Repeat("e", 64), uuid.FromStringOrNil(fixtureUserID), time.Now().UTC().Add(-time.Hour))
+	s.Require().NoError(err)
+	overGate := s.connectWithOptions("-c hanko.trust_migration_max_live_rows=0")
+	defer overGate.GetConnection().Close()
+	s.Require().NoError(overGate.MigrateUp(), "expired rows are pruned, not counted")
+}
+
+func (s *trustedDeviceMigrationSuite) TestTenantMigration_PrunesOnlyExpiredUTCTrustInAnotherTimeZone() {
+	if testing.Short() {
+		s.T().Skip("requires disposable PostgreSQL")
+	}
+	s.Require().NoError(s.Storage.MigrateDown(2))
+	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
+	userID := uuid.FromStringOrNil(fixtureUserID)
+	live, err := s.insertTrustedDevice(strings.Repeat("z", 64), userID, time.Now().UTC().Add(time.Hour))
+	s.Require().NoError(err)
+	_, err = s.insertTrustedDevice(strings.Repeat("y", 64), userID, time.Now().UTC().Add(-time.Hour))
+	s.Require().NoError(err)
+	zoned := s.connectWithOptions("-c TimeZone=Asia/Tokyo")
+	defer zoned.GetConnection().Close()
+	s.Require().NoError(zoned.MigrateUp())
+	var ids []struct {
+		ID uuid.UUID `db:"id"`
+	}
+	s.Require().NoError(zoned.GetConnection().RawQuery("SELECT id FROM trusted_devices WHERE user_id = ?", userID).All(&ids))
+	s.Require().Len(ids, 1)
+	s.Equal(live, ids[0].ID)
+}
 
 func (s *trustedDeviceMigrationSuite) TestMigration_DedupesTrustedDevicesBeforeCreatingUniqueIndex() {
 	if testing.Short() {
@@ -52,9 +128,12 @@ func (s *trustedDeviceMigrationSuite) TestMigration_DedupesTrustedDevicesBeforeC
 	// SetupTest() already ran MigrateUp(), which means the migration under
 	// test has already run and its unique index already exists -- so we
 	// can't insert duplicate (device_token, user_id) rows yet. Roll back
-	// just that one migration so duplicates can be inserted with raw SQL,
-	// then re-apply it and assert on the outcome.
-	s.Require().NoError(s.Storage.MigrateDown(1))
+	// that migration so duplicates can be inserted with raw SQL, then
+	// re-apply it and assert on the outcome. Three steps, because
+	// the tenant-id and revocation migrations both run after it and leave
+	// this index in place; rolling back all three returns the table to the
+	// schema this migration first ran against.
+	s.Require().NoError(s.Storage.MigrateDown(3))
 
 	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
 
@@ -93,9 +172,9 @@ func (s *trustedDeviceMigrationSuite) TestMigration_DedupesTrustedDevicesBeforeC
 	s.Require().NoError(err)
 
 	// Sanity check: 5 rows exist before the migration runs.
-	preCount, err := s.Storage.GetConnection().Count(&models.TrustedDevice{})
+	preRows, err := s.rowsWithoutTenant("")
 	s.Require().NoError(err)
-	s.Require().Equal(5, preCount)
+	s.Require().Len(preRows, 5)
 
 	// This is the assertion that proves the outage path is unreachable:
 	// the migration must succeed even with duplicate (device_token,
@@ -135,6 +214,98 @@ func (s *trustedDeviceMigrationSuite) TestMigration_DedupesTrustedDevicesBeforeC
 	tieLowExists, err := s.Storage.GetConnection().Where("id = ?", tieLowID).Exists(&models.TrustedDevice{})
 	s.Require().NoError(err)
 	s.False(tieLowExists, "the losing tied-expires_at duplicate (lower id) must have been deleted")
+}
+
+// TestTenantMigration_BackfillsTenantBoundUsersAndKeepsGlobalRowsLegacy covers
+// 20261101235835_add_trusted_devices_tenant_id. Login flows send X-Tenant-ID, and after this
+// migration a NULL row no longer answers them, so without the backfill every trusted browser would
+// be asked for a code once after deploy. A tenant-bound user can only be signed in under their own
+// tenant, so their rows take that tenant; a global user's rows stay NULL.
+func (s *trustedDeviceMigrationSuite) TestTenantMigration_BackfillsTenantBoundUsersAndKeepsGlobalRowsLegacy() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	s.Require().NoError(s.Storage.MigrateDown(2))
+	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
+
+	tenantID := uuid.FromStringOrNil("aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa")
+	boundUserID := uuid.FromStringOrNil("dddddddd-4444-4444-8444-dddddddddddd")
+	globalUserID := uuid.FromStringOrNil(fixtureUserID)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	s.Require().NoError(s.Storage.GetConnection().RawQuery(
+		"INSERT INTO tenants (id, name, slug, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+		tenantID, "Tenant A", "tenant-a", true, now, now,
+	).Exec())
+	s.Require().NoError(s.Storage.GetConnection().RawQuery(
+		"INSERT INTO users (id, tenant_id, created_at, updated_at) VALUES (?, ?, ?, ?)",
+		boundUserID, tenantID, now, now,
+	).Exec())
+
+	boundRowID, err := s.insertTrustedDevice(strings.Repeat("d", 64), boundUserID, now.Add(time.Hour))
+	s.Require().NoError(err)
+	globalRowID, err := s.insertTrustedDevice(strings.Repeat("e", 64), globalUserID, now.Add(time.Hour))
+	s.Require().NoError(err)
+
+	s.Require().NoError(s.Storage.MigrateUp())
+
+	var boundRow models.TrustedDevice
+	s.Require().NoError(s.Storage.GetConnection().Find(&boundRow, boundRowID))
+	s.Require().NotNil(boundRow.TenantID, "a tenant-bound user's row must take the user's tenant")
+	s.Equal(tenantID, *boundRow.TenantID)
+
+	var globalRow models.TrustedDevice
+	s.Require().NoError(s.Storage.GetConnection().Find(&globalRow, globalRowID))
+	s.Nil(globalRow.TenantID, "a global user's row must stay a legacy row")
+}
+
+// 20261101235835 is additive: trusted_devices_token_user_idx, the previous image's ON CONFLICT
+// arbiter, survives it, so one browser still holds one row per user across tenants; and its down
+// drops only what it added, leaving that index in place.
+func (s *trustedDeviceMigrationSuite) TestTenantMigration_KeepsThePairIndexAndDownDropsOnlyTheTenant() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
+
+	userID := uuid.FromStringOrNil(fixtureUserID)
+	token := strings.Repeat("f", 64)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	insertUnder := func(tenant string) error {
+		return s.Storage.GetConnection().RawQuery(
+			"INSERT INTO trusted_devices (id, user_id, tenant_id, device_token, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+			uuid.Must(uuid.NewV4()), userID, uuid.FromStringOrNil(tenant), token, now.Add(time.Hour), now, now,
+		).Exec()
+	}
+	s.Require().NoError(insertUnder("aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa"))
+	s.Error(insertUnder("bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb"),
+		"trusted_devices_token_user_idx must still allow one row per (device_token, user_id)")
+
+	s.Require().NoError(s.Storage.MigrateDown(2))
+
+	_, err := s.insertTrustedDevice(token, userID, now.Add(48*time.Hour))
+	s.Error(err, "after the down, trusted_devices_token_user_idx must still reject a duplicate")
+
+	rows, err := s.rowsWithoutTenant("WHERE device_token = ?", token)
+	s.Require().NoError(err)
+	s.Len(rows, 1, "the down keeps the rows; it drops only the tenant")
+
+	s.Require().NoError(s.Storage.MigrateUp())
+}
+
+// rowsWithoutTenant reads trusted_devices naming its columns, for a schema rolled back below
+// 20261101235835: pop's Count and All select every column of models.TrustedDevice, tenant_id
+// included, which does not exist there.
+func (s *trustedDeviceMigrationSuite) rowsWithoutTenant(where string, args ...interface{}) ([]models.TrustedDevice, error) {
+	var rows []models.TrustedDevice
+	err := s.Storage.GetConnection().RawQuery(
+		"SELECT id, user_id, device_token, expires_at, created_at, updated_at FROM trusted_devices "+where,
+		args...,
+	).All(&rows)
+	return rows, err
 }
 
 func (s *trustedDeviceMigrationSuite) insertTrustedDevice(deviceToken string, userID uuid.UUID, expiresAt time.Time) (uuid.UUID, error) {

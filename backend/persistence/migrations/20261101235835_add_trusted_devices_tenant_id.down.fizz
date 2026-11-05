@@ -1,0 +1,19 @@
+sql("SET LOCAL lock_timeout = '5s'")
+sql("DROP INDEX IF EXISTS trusted_devices_token_user_global_idx")
+sql("DROP INDEX IF EXISTS trusted_devices_token_user_tenant_idx")
+drop_column("trusted_devices", "tenant_id")
+# DO NOT RUN THIS WITHOUT ALSO REVERTING THE HANKO IMAGE.
+#
+# This image's trust writes (refresh, insertIfAbsent, moveToTenant) and its lookup (FindValidTrust)
+# name tenant_id. Drop the column while it is still deployed and every write errors and aborts the
+# flow transaction, so every login that trusts the browser fails at Success; the lookup errors too
+# and fails closed, so every trusted browser is asked for the code. Revert the image first, then
+# run this.
+#
+# trusted_devices_token_user_idx was never dropped by the up migration, so there is nothing to
+# restore: the previous image's ON CONFLICT (device_token, user_id) keeps its arbiter throughout.
+# The rows keep their (device_token, user_id) and lose only the tenant, which makes every row answer
+# every tenant again -- the behaviour before trust was scoped.
+#
+# Task 34 drops trusted_devices_token_user_idx in a later migration; its down must deduplicate and
+# recreate the index before this one runs.

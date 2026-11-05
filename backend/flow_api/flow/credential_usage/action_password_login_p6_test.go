@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofrs/uuid"
 	"github.com/sethvargo/go-limiter/memorystore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -103,6 +104,38 @@ func TestPasswordLogin_Execute_EmailGlobalFallbackAdopts(t *testing.T) {
 	assert.True(t, ctx.continued)
 }
 
+// keep_users_global (archon#1085 task 16): the same global email fallback is left global, and the
+// password is checked against that global user's credential: the right one logs in, a wrong one
+// does not.
+func TestPasswordLogin_Execute_EmailGlobalFallbackKeptGlobal(t *testing.T) {
+	for name, tc := range map[string]struct {
+		password string
+		loggedIn bool
+	}{
+		"right password": {knownPassword, true},
+		"wrong password": {"not-the-password", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			deps, p, _, _ := loginDeps()
+			deps.Cfg.MultiTenant.KeepUsersGlobal = true
+			deps.Cfg.MultiTenant.AllowGlobalUsers = true
+			deps.Cfg.MultiTenant.Enabled = true
+			p.emails.email = &models.Email{UserID: &userID, Address: "user@example.com"}
+			p.emails.isGlobal = true
+			p.users.user = &models.User{ID: userID}
+			withRealPasswordCheck(t, deps, userID)
+
+			ctx := newLoginCtx(deps, map[string]interface{}{"password": tc.password})
+			require.NoError(t, ctx.Stash().Set(shared.StashPathEmail, "user@example.com"))
+
+			require.NoError(t, PasswordLogin{}.Execute(ctx))
+			assert.Equal(t, 0, p.users.adoptCalls, "a kept-global user must not be adopted into the login tenant")
+			assert.Equal(t, tc.loggedIn, ctx.continued)
+			assert.Equal(t, !tc.loggedIn, ctx.errored)
+		})
+	}
+}
+
 // A persister failure while resolving the email surfaces as a hard error.
 func TestPasswordLogin_Execute_EmailLookupError(t *testing.T) {
 	deps, p, _, _ := loginDeps()
@@ -125,6 +158,63 @@ func TestPasswordLogin_Execute_EmailAdoptError(t *testing.T) {
 	require.NoError(t, ctx.Stash().Set(shared.StashPathEmail, "user@example.com"))
 
 	require.Error(t, PasswordLogin{}.Execute(ctx))
+}
+
+// passwordLoginUnder runs one password login for user@example.com with tenant as the request tenant.
+func passwordLoginUnder(t *testing.T, deps *shared.Dependencies, tenant uuid.UUID) *fakeLoginCtx {
+	t.Helper()
+	return passwordLoginUnderWith(t, deps, tenant, knownPassword)
+}
+
+// passwordLoginUnderWith is passwordLoginUnder with the given password.
+func passwordLoginUnderWith(t *testing.T, deps *shared.Dependencies, tenant uuid.UUID, password string) *fakeLoginCtx {
+	t.Helper()
+	deps.TenantID = &tenant
+	ctx := newLoginCtx(deps, map[string]interface{}{"password": password})
+	require.NoError(t, ctx.Stash().Set(shared.StashPathEmail, "user@example.com"))
+	require.NoError(t, PasswordLogin{}.Execute(ctx))
+	return ctx
+}
+
+// archon#1085 6.2 #19 with keep_users_global: one person logs in under clinic A, then under clinic
+// B. The identity stays global, so the B login still finds them and both logins proceed.
+func TestPasswordLogin_Execute_KeptGlobalUserLogsInUnderTenantAThenB(t *testing.T) {
+	deps, _, _, _ := loginDeps()
+	deps.Cfg.MultiTenant.KeepUsersGlobal = true
+	deps.Cfg.MultiTenant.AllowGlobalUsers = true
+	deps.Cfg.MultiTenant.Enabled = true
+	users := withGlobalUser(deps, "user@example.com")
+	withRealPasswordCheck(t, deps, userID)
+
+	underA := passwordLoginUnder(t, deps, tenantA)
+	require.True(t, underA.continued, "the right password must log in under tenant A")
+	assert.Nil(t, users.user.TenantID, "the login under tenant A must leave the identity global")
+
+	underB := passwordLoginUnder(t, deps, tenantB)
+	assert.True(t, underB.continued, "the same user's right password must log in under tenant B")
+	assert.False(t, underB.errored)
+
+	wrongUnderB := passwordLoginUnderWith(t, deps, tenantB, "not-the-password")
+	assert.False(t, wrongUnderB.continued, "a wrong password must not log in under tenant B")
+	assert.True(t, wrongUnderB.errored)
+	assert.Equal(t, 0, users.adoptCalls, "no tenant may adopt a kept-global user")
+}
+
+// archon#1085 6.2 #19 without keep_users_global: the bug the flag removes. The login under A adopts
+// the user into A, so the global fallback no longer matches and the login under B finds nobody.
+func TestPasswordLogin_Execute_AdoptedUserNotFoundUnderTenantB(t *testing.T) {
+	deps, _, _, _ := loginDeps()
+	users := withGlobalUser(deps, "user@example.com")
+
+	underA := passwordLoginUnder(t, deps, tenantA)
+	require.True(t, underA.continued)
+	require.NotNil(t, users.user.TenantID)
+	assert.Equal(t, tenantA, *users.user.TenantID, "the first login adopts the user into tenant A")
+
+	underB := passwordLoginUnder(t, deps, tenantB)
+	assert.True(t, underB.errored, "the user adopted into A is not found under B")
+	assert.False(t, underB.continued)
+	assert.Equal(t, 1, users.adoptCalls)
 }
 
 // Happy path via username.
@@ -165,6 +255,37 @@ func TestPasswordLogin_Execute_UsernameGlobalFallbackAdopts(t *testing.T) {
 	require.NoError(t, PasswordLogin{}.Execute(ctx))
 	assert.Equal(t, 1, p.users.adoptCalls)
 	assert.True(t, ctx.continued)
+}
+
+// keep_users_global: the global username fallback is left global, and the password is checked
+// against that global user's credential.
+func TestPasswordLogin_Execute_UsernameGlobalFallbackKeptGlobal(t *testing.T) {
+	for name, tc := range map[string]struct {
+		password string
+		loggedIn bool
+	}{
+		"right password": {knownPassword, true},
+		"wrong password": {"not-the-password", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			deps, p, _, _ := loginDeps()
+			deps.Cfg.MultiTenant.KeepUsersGlobal = true
+			deps.Cfg.MultiTenant.AllowGlobalUsers = true
+			deps.Cfg.MultiTenant.Enabled = true
+			p.usernames.username = &models.Username{UserId: userID, Username: "alice"}
+			p.usernames.isGlobal = true
+			p.users.user = &models.User{ID: userID}
+			withRealPasswordCheck(t, deps, userID)
+
+			ctx := newLoginCtx(deps, map[string]interface{}{"password": tc.password})
+			require.NoError(t, ctx.Stash().Set(shared.StashPathUsername, "alice"))
+
+			require.NoError(t, PasswordLogin{}.Execute(ctx))
+			assert.Equal(t, 0, p.users.adoptCalls, "a kept-global user must not be adopted into the login tenant")
+			assert.Equal(t, tc.loggedIn, ctx.continued)
+			assert.Equal(t, !tc.loggedIn, ctx.errored)
+		})
+	}
 }
 
 // A failing tenant adoption in the username path surfaces as a hard error.
