@@ -1,0 +1,19 @@
+backend/persistence/migrations/20261101235835_add_trusted_devices_tenant_id.up.fizz
+  s_c9ff1500430cea::t_2c9df3fff7a014 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "094703d5f5b92143b1f73e647f9cd260554722b9",
+  "prompts": {},
+  "sessions": {
+    "s_c9ff1500430cea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b273f1a9-0fb5-429e-b20c-0889a5ff2864",
+        "model": "unknown"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,33 @@
+MULTI_TENANT_DOCKER_GUIDE.md
+  s_32fcc69a51093a::t_73e4258577b111 185,187,191,202
+  s_32fcc69a51093a::t_d852ce4d79e32d 193-196
+backend/persistence/trusted_device_persister_integration_test.go
+  s_32fcc69a51093a::t_d852ce4d79e32d 751-756
+backend/persistence/migrations/20261103055553_add_trusted_device_revocations.down.fizz
+  s_32fcc69a51093a::t_73e4258577b111 3-5
+backend/persistence/migrations/20261101235835_add_trusted_devices_tenant_id.up.fizz
+  s_32fcc69a51093a::t_73e4258577b111 3-4,20,36,39-41
+backend/persistence/migrations/20261103055553_add_trusted_device_revocations.up.fizz
+  s_32fcc69a51093a::t_73e4258577b111 2,4-5
+backend/persistence/user_persister.go
+  s_32fcc69a51093a::t_73e4258577b111 218-229
+backend/persistence/trusted_device_migration_integration_test.go
+  s_32fcc69a51093a::t_d852ce4d79e32d 93-94
+  s_32fcc69a51093a::t_73e4258577b111 92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a0d9420f285439bc08b4ec36de67738fce8b37ee",
+  "prompts": {},
+  "sessions": {
+    "s_32fcc69a51093a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19f0f-6e83-7b21-8dbb-6ef161839480",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}

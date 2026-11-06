@@ -1,0 +1,21 @@
+backend/persistence/trusted_device_migration_integration_test.go
+  s_32fcc69a51093a::t_86a5c328e753e4 83-110
+backend/persistence/migrations/20261101235835_add_trusted_devices_tenant_id.up.fizz
+  s_32fcc69a51093a::t_86a5c328e753e4 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "643c2b96996dc227930350b11381d50af1351a7e",
+  "prompts": {},
+  "sessions": {
+    "s_32fcc69a51093a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19f0f-6e83-7b21-8dbb-6ef161839480",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}

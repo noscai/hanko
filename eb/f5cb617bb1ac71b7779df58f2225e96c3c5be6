@@ -1,0 +1,24 @@
+backend/flow_api/flow/registration/hook_create_user_test.go
+  s_32fcc69a51093a::t_6e00ce11604c97 1-33,35-53,55-59,70-161
+  s_32fcc69a51093a::t_89f70531aa2d6b 34,54,60-69,162-163
+backend/config/config_multi_tenant.go
+  s_32fcc69a51093a::t_564f96fb13cef9 37-40
+backend/flow_api/flow/registration/hook_create_user.go
+  s_32fcc69a51093a::t_fc55b57efa15e6 69-73,85,96,116,134,147,164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ebf5cb617bb1ac71b7779df58f2225e96c3c5be6",
+  "prompts": {},
+  "sessions": {
+    "s_32fcc69a51093a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19f0f-6e83-7b21-8dbb-6ef161839480",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}

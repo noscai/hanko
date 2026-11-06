@@ -1,0 +1,29 @@
+MULTI_TENANT_DOCKER_GUIDE.md
+  s_c9ff1500430cea::t_2f5e8414a53504 187,189,195,259-280
+backend/flow_api/flow/device_trust/hook_schedule_trust_device_state.go
+  s_c9ff1500430cea::t_00cb08c80ff7a0 16-19
+backend/flow_api/flow/device_trust/hook_schedule_trust_device_state_test.go
+  s_c9ff1500430cea::t_1bc32b107920d6 1-49
+backend/persistence/migrations/20261101235835_add_trusted_devices_tenant_id.up.fizz
+  s_c9ff1500430cea::t_d0726e2e6a5428 2,36-46
+backend/persistence/migrations/20261103055553_add_trusted_device_revocations.up.fizz
+  s_c9ff1500430cea::t_e7c2b027d82b07 4-7
+backend/persistence/trusted_device_migration_integration_test.go
+  s_c9ff1500430cea::t_6c00a7c8490c88 46,50,52,54,61,69-78,80-98,112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4aaa9dd8d56d2e5513270bf8d8205c530d5a69a8",
+  "prompts": {},
+  "sessions": {
+    "s_c9ff1500430cea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b273f1a9-0fb5-429e-b20c-0889a5ff2864",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}
