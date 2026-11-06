@@ -29,7 +29,13 @@ ran in.
    older image, new pods drop the index while old pods are still serving, and every trusted-browser
    write fails for the rest of the rollout. A cluster on an older image first gets a hanko#17-only
    image (built from `ea331cde`, without `20261106065051`; dev runs `05112026-1`), fully rolled out,
-   then this one.
+   then this one. That image's init container runs `20261101235835`, which has its own size gate:
+   above 50,000 live trust rows it refuses under live traffic
+   (`trusted_devices is too large to migrate under live login traffic`). Count first:
+   `SELECT count(*) FROM trusted_devices WHERE expires_at > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC');`.
+   Above the gate, drain Hanko and run the migrate once with
+   `-c hanko.trusted_device_maintenance=on` (and `-c hanko.trust_migration_statement_timeout=5min`
+   for a large table), as the migration's comment describes.
 
 ## Steps (per cluster)
 
@@ -51,7 +57,7 @@ prod steps are run by a person with prod access.
 3. **Deploy this image.** Its init container runs `20261106065051`. Re-run the precheck:
    `pair_index_drop_applied = 1`, `pair_index_left = 0`. Then re-run the trust backfill once (the
    guide's per-cluster step):
-   `UPDATE trusted_devices SET tenant_id = users.tenant_id FROM users WHERE trusted_devices.user_id = users.id AND users.tenant_id IS NOT NULL AND trusted_devices.tenant_id IS NULL`.
+   `UPDATE trusted_devices SET tenant_id = users.tenant_id FROM users WHERE trusted_devices.user_id = users.id AND users.tenant_id IS NOT NULL AND trusted_devices.tenant_id IS NULL;`
 4. **Turn the flag on.** `noscai-kubernetes-manifest` PR setting `keep_users_global: true` under
    `multi_tenant` in `clusters/aws-<env>/third-party/hanko/hanko-config.yaml` (needs
    `allow_global_users: true`, already set). Merge, wait for every pod to restart on it.

@@ -18,7 +18,9 @@ FROM users;
 -- 3. Tenant-bound users the un-adopt must skip: one of their addresses or usernames is held by
 --    another row, so making theirs global would break emails_address_global_idx /
 --    usernames_username_global_idx. Each is a person with a separate Hanko user per clinic.
-WITH dup_email AS (SELECT address FROM emails GROUP BY address HAVING count(*) > 1),
+--    Only rows that are global after the un-adopt count: an email row without a user keeps its
+--    tenant, so it can't collide.
+WITH dup_email AS (SELECT address FROM emails WHERE tenant_id IS NULL OR user_id IS NOT NULL GROUP BY address HAVING count(*) > 1),
      dup_username AS (SELECT username FROM usernames GROUP BY username HAVING count(*) > 1),
      blocked AS (
        SELECT e.user_id FROM emails e JOIN dup_email USING (address) WHERE e.user_id IS NOT NULL

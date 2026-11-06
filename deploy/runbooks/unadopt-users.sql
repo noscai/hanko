@@ -4,6 +4,7 @@
 --
 -- Dry run (default, ends in ROLLBACK):   psql "$HANKO_DB_URL" -X -f unadopt-users.sql
 -- Commit:                                psql "$HANKO_DB_URL" -X -v commit=1 -f unadopt-users.sql
+-- Any value psql doesn't read as true (0, off, a typo) rolls back.
 \set ON_ERROR_STOP on
 BEGIN;
 SET LOCAL lock_timeout = '5s';
@@ -15,7 +16,7 @@ SET LOCAL statement_timeout = '60s';
 -- everyone is global, emails_address_global_idx covers every address and registration under the
 -- flag cannot create a second Hanko user for someone bound elsewhere.
 CREATE TEMP TABLE unadopt ON COMMIT DROP AS
-WITH dup_email AS (SELECT address FROM emails GROUP BY address HAVING count(*) > 1),
+WITH dup_email AS (SELECT address FROM emails WHERE tenant_id IS NULL OR user_id IS NOT NULL GROUP BY address HAVING count(*) > 1),
      dup_username AS (SELECT username FROM usernames GROUP BY username HAVING count(*) > 1),
      blocked AS (
        SELECT e.user_id FROM emails e JOIN dup_email USING (address) WHERE e.user_id IS NOT NULL
@@ -54,8 +55,13 @@ SELECT count(*) AS users_unadopted FROM r;
 -- sessions, flows and audit_logs keep their tenant: each records the clinic it ran in.
 
 \if :{?commit}
+\if :commit
 COMMIT;
 \echo 'COMMITTED'
+\else
+ROLLBACK;
+\echo 'commit is not true: rolled back. Pass -v commit=1 to apply.'
+\endif
 \else
 ROLLBACK;
 \echo 'DRY RUN: rolled back. Re-run with -v commit=1 to apply.'

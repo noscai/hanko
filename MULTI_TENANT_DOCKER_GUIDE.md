@@ -197,7 +197,7 @@ still scopes the flow and session proof.
 >    by turning the flag off again, and it can collide with the global unique email index. Run it
 >    from a reviewed runbook, after a verified database snapshot, with before/after counts
 >    (ClinicOS: archon#1085 task 34, [`deploy/runbooks/keep-users-global.md`](deploy/runbooks/keep-users-global.md)).
->    Run it right after the flag is on, never before: with the flag off, the next login adopts the
+>    Run it right after the flag is on and every pod has restarted with it, never before: with the flag off, the next login adopts the
 >    user again. It leaves `trusted_devices.tenant_id` untouched: each trust
 >    row keeps the clinic that trusted it, and setting it to `NULL` would turn every clinic's trust
 >    into tenantless trust. It deletes the un-adopted users' trust rows that have no tenant instead
