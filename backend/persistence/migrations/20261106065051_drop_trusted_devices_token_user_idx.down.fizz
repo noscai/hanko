@@ -1,5 +1,7 @@
 sql("SET LOCAL lock_timeout = '5s'")
 sql("SELECT set_config('statement_timeout', COALESCE(NULLIF(current_setting('hanko.trust_migration_statement_timeout', true), ''), '30s'), true)")
+sql("DO $$ BEGIN IF (SELECT count(*) FROM trusted_devices WHERE expires_at > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')) > COALESCE(NULLIF(current_setting('hanko.trust_migration_max_live_rows', true), '')::bigint, 50000) AND current_setting('hanko.trusted_device_maintenance', true) IS DISTINCT FROM 'on' THEN RAISE EXCEPTION 'trusted_devices is too large to roll back under live login traffic; drain Hanko and acknowledge maintenance using connection option -c hanko.trusted_device_maintenance=on'; END IF; END $$")
+sql("DELETE FROM trusted_devices WHERE expires_at <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")
 sql("DELETE FROM trusted_devices WHERE id IN (SELECT id FROM (SELECT id, row_number() OVER (PARTITION BY device_token, user_id ORDER BY expires_at DESC NULLS LAST, id DESC) AS rn FROM trusted_devices) t WHERE t.rn > 1)")
 sql("CREATE UNIQUE INDEX trusted_devices_token_user_idx ON trusted_devices (device_token, user_id)")
 # Puts back the pair index the up dropped, so an image older than 20261101235835 (ON CONFLICT
@@ -14,7 +16,9 @@ sql("CREATE UNIQUE INDEX trusted_devices_token_user_idx ON trusted_devices (devi
 # The DELETE and the index build hold trusted_devices for a time that scales with the table, like
 # 20261101235835. statement_timeout (30s, override with hanko.trust_migration_statement_timeout)
 # bounds that hold: a timed-out down rolls back whole, so the index is either back or untouched.
-# A large table rolls back with Hanko drained, as 20261101235835 describes.
+# Above hanko.trust_migration_max_live_rows live rows (50,000) the down refuses unless maintenance is
+# acknowledged with -c hanko.trusted_device_maintenance=on, the same gate as 20261101235835: a large
+# table rolls back with Hanko drained. Expired rows are pruned first and never counted.
 #
 # Comments must stay BELOW the sql() calls: .fizz is run through plush.RunScript, and a leading
 # comment corrupts the token stream ("no prefix parse function for ) found").

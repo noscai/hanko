@@ -333,6 +333,23 @@ func (s *trustedDeviceMigrationSuite) TestPairIndexDrop_AllowsTrustPerTenantAndD
 	s.Require().NoError(s.Storage.MigrateUp())
 }
 
+func (s *trustedDeviceMigrationSuite) TestPairIndexDrop_DownRefusesAboveTheSizeGateWithoutMaintenanceAcknowledgement() {
+	if testing.Short() {
+		s.T().Skip("requires disposable PostgreSQL")
+	}
+	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
+	s.Require().NoError(s.insertUnderTenant(strings.Repeat("g", 64), uuid.FromStringOrNil(fixtureUserID), "", time.Now().UTC().Add(time.Hour)))
+
+	overGate := s.connectWithOptions("-c hanko.trust_migration_max_live_rows=0")
+	defer overGate.GetConnection().Close()
+	s.Require().ErrorContains(overGate.MigrateDown(1), "too large to roll back under live login traffic")
+	acknowledged := s.connectWithOptions("-c hanko.trust_migration_max_live_rows=0 -c hanko.trusted_device_maintenance=on")
+	defer acknowledged.GetConnection().Close()
+	s.Require().NoError(acknowledged.MigrateDown(1), "explicit maintenance acknowledgement permits the same rollback")
+
+	s.Require().NoError(s.Storage.MigrateUp())
+}
+
 // insertUnderTenant writes a trust row with raw SQL under a tenant, or without one for "".
 func (s *trustedDeviceMigrationSuite) insertUnderTenant(token string, userID uuid.UUID, tenant string, expiresAt time.Time) error {
 	var tenantID interface{}

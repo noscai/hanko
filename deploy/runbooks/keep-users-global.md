@@ -90,6 +90,8 @@ locally with the precheck's `blocked` CTE, never in a ticket or Slack.
 - **Before step 5:** set `keep_users_global: false`. Users stay as they are.
 - **Image rollback after step 3:** an image older than hanko#17 needs `20261106065051`'s down
   first (`hanko migrate down 1`, which keeps the latest trust row per browser and user and
-  recreates the index).
+  recreates the index). Above 50,000 live trust rows the down refuses under live traffic: drain
+  Hanko and pass `-c hanko.trusted_device_maintenance=on` in the database URL's `options`, as for
+  hanko#17's size gate above.
 - **After step 5:** keep the flag on. Turning it off adopts each un-adopted user into the clinic
   they next sign in to.
