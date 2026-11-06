@@ -1,0 +1,41 @@
+MULTI_TENANT_DOCKER_GUIDE.md
+  s_38425b6ffe0586::t_018f6a272f4ef1 236-237
+  s_38425b6ffe0586::t_eecdf6af8be63c 199-201
+backend/persistence/trusted_device_persister_integration_test.go
+  s_38425b6ffe0586::t_8bea920acead68 538-541
+  s_38425b6ffe0586::t_67bc78f1070f0a 438,446
+  s_38425b6ffe0586::t_9d97f2e2bdc062 560-564,566
+  s_38425b6ffe0586::t_3cd14bd24b911b 485-487
+  s_38425b6ffe0586::t_ae47624d5ce9cd 447
+backend/persistence/trusted_device_migration_integration_test.go
+  s_38425b6ffe0586::t_a0f7aca26a3add 132-136
+  s_38425b6ffe0586::t_15a7c7495c4531 265-266,272,279-280
+  s_38425b6ffe0586::t_7e3edfdce25c72 295-348
+  s_38425b6ffe0586::t_19bf3e2ef1c055 65,76,92,105,229
+backend/persistence/migrations/20261106065051_drop_trusted_devices_token_user_idx.down.fizz
+  s_38425b6ffe0586::t_f06dd3cb6c8b7b 1-14
+backend/persistence/migrations/20261106065051_drop_trusted_devices_token_user_idx.up.fizz
+  s_38425b6ffe0586::t_43b78b2c12f748 1-20
+deploy/runbooks/keep-users-global.md
+  s_38425b6ffe0586::t_19ede1ce3bde7b 1-86
+deploy/runbooks/unadopt-precheck.sql
+  s_38425b6ffe0586::t_13866f0bd09100 1-42
+deploy/runbooks/unadopt-users.sql
+  s_38425b6ffe0586::t_c76e2278cf8272 1-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2d484c1a9671855e4ccd777266a3ecaeaedc710e",
+  "prompts": {},
+  "sessions": {
+    "s_38425b6ffe0586": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dbe291cd-ab78-42d7-b067-4a92380ab6f7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}
