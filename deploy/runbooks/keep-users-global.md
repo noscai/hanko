@@ -33,9 +33,12 @@ ran in.
    above 50,000 live trust rows it refuses under live traffic
    (`trusted_devices is too large to migrate under live login traffic`). Count first:
    `SELECT count(*) FROM trusted_devices WHERE expires_at > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC');`.
-   Above the gate, drain Hanko and run the migrate once with
-   `-c hanko.trusted_device_maintenance=on` (and `-c hanko.trust_migration_statement_timeout=5min`
-   for a large table), as the migration's comment describes.
+   Above the gate, drain Hanko (scale it to 0) and run the migrate once with the settings as
+   Postgres connection options in its database URL, the way
+   `trusted_device_migration_integration_test.go` does:
+   `…?sslmode=require&options=-c%20hanko.trusted_device_maintenance%3Don%20-c%20hanko.trust_migration_statement_timeout%3D5min`.
+   They are not `hanko migrate` flags. Keep Hanko drained until every pod runs the hanko#17 image,
+   then remove the options again: left in place, every later migrate skips the gate.
 
 ## Steps (per cluster)
 
