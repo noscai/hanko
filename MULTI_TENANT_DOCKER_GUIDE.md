@@ -196,7 +196,9 @@ still scopes the flow and session proof.
 >    un-adopted (`tenant_id = NULL` on the user and related rows). That data step can't be undone
 >    by turning the flag off again, and it can collide with the global unique email index. Run it
 >    from a reviewed runbook, after a verified database snapshot, with before/after counts
->    (ClinicOS: archon#1085 task 34). It leaves `trusted_devices.tenant_id` untouched: each trust
+>    (ClinicOS: archon#1085 task 34, [`deploy/runbooks/keep-users-global.md`](deploy/runbooks/keep-users-global.md)).
+>    Run it right after the flag is on, never before: with the flag off, the next login adopts the
+>    user again. It leaves `trusted_devices.tenant_id` untouched: each trust
 >    row keeps the clinic that trusted it, and setting it to `NULL` would turn every clinic's trust
 >    into tenantless trust. It deletes the un-adopted users' trust rows that have no tenant instead
 >    of creating new ones. With the flag on, a flow without a tenant never skips the second factor.
@@ -231,8 +233,8 @@ check:
 It ships in two steps. This version keeps the `(device_token, user_id)` unique index, so one browser
 holds one trust row per user and trust follows the clinic that trusted it last; while every user
 belongs to one tenant, nothing is lost. Before `keep_users_global` is turned on, and only once no pod
-of an older image is left, the index is dropped by a migration that ships with that change
-(ClinicOS: archon#1085 task 34), never by hand, so fresh databases and tests keep the clusters'
+of an older image is left, the index is dropped by migration
+`20261106065051_drop_trusted_devices_token_user_idx` (ClinicOS: archon#1085 task 34), never by hand, so fresh databases and tests keep the clusters'
 schema. Its up is `DROP INDEX IF EXISTS trusted_devices_token_user_idx`; its down deletes all but
 the latest-expiring row of each `(device_token, user_id)` and recreates the unique index. From then
 on one browser holds a separate trust per clinic, with no code change.
