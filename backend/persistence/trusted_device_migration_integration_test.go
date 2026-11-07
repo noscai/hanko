@@ -62,7 +62,7 @@ func (s *trustedDeviceMigrationSuite) TestTenantMigration_RunsUnderLiveTrafficBe
 	if testing.Short() {
 		s.T().Skip("requires disposable PostgreSQL")
 	}
-	s.Require().NoError(s.Storage.MigrateDown(2))
+	s.Require().NoError(s.Storage.MigrateDown(3))
 	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
 	_, err := s.insertTrustedDevice(strings.Repeat("m", 64), uuid.FromStringOrNil(fixtureUserID), time.Now().UTC().Add(time.Hour))
 	s.Require().NoError(err)
@@ -73,7 +73,7 @@ func (s *trustedDeviceMigrationSuite) TestTenantMigration_RefusesAboveTheSizeGat
 	if testing.Short() {
 		s.T().Skip("requires disposable PostgreSQL")
 	}
-	s.Require().NoError(s.Storage.MigrateDown(2))
+	s.Require().NoError(s.Storage.MigrateDown(3))
 	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
 	_, err := s.insertTrustedDevice(strings.Repeat("m", 64), uuid.FromStringOrNil(fixtureUserID), time.Now().UTC().Add(time.Hour))
 	s.Require().NoError(err)
@@ -89,7 +89,7 @@ func (s *trustedDeviceMigrationSuite) TestTenantMigration_SizeGateCountsOnlyLive
 	if testing.Short() {
 		s.T().Skip("requires disposable PostgreSQL")
 	}
-	s.Require().NoError(s.Storage.MigrateDown(2))
+	s.Require().NoError(s.Storage.MigrateDown(3))
 	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
 	_, err := s.insertTrustedDevice(strings.Repeat("e", 64), uuid.FromStringOrNil(fixtureUserID), time.Now().UTC().Add(-time.Hour))
 	s.Require().NoError(err)
@@ -102,7 +102,7 @@ func (s *trustedDeviceMigrationSuite) TestTenantMigration_PrunesOnlyExpiredUTCTr
 	if testing.Short() {
 		s.T().Skip("requires disposable PostgreSQL")
 	}
-	s.Require().NoError(s.Storage.MigrateDown(2))
+	s.Require().NoError(s.Storage.MigrateDown(3))
 	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
 	userID := uuid.FromStringOrNil(fixtureUserID)
 	live, err := s.insertTrustedDevice(strings.Repeat("z", 64), userID, time.Now().UTC().Add(time.Hour))
@@ -129,11 +129,11 @@ func (s *trustedDeviceMigrationSuite) TestMigration_DedupesTrustedDevicesBeforeC
 	// test has already run and its unique index already exists -- so we
 	// can't insert duplicate (device_token, user_id) rows yet. Roll back
 	// that migration so duplicates can be inserted with raw SQL, then
-	// re-apply it and assert on the outcome. Three steps, because
-	// the tenant-id and revocation migrations both run after it and leave
-	// this index in place; rolling back all three returns the table to the
-	// schema this migration first ran against.
-	s.Require().NoError(s.Storage.MigrateDown(3))
+	// re-apply it and assert on the outcome. Four steps, because the
+	// tenant-id, revocation and pair-index-drop migrations run after it
+	// (the last one's down recreates this index); rolling back all four
+	// returns the table to the schema this migration first ran against.
+	s.Require().NoError(s.Storage.MigrateDown(4))
 
 	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
 
@@ -226,7 +226,7 @@ func (s *trustedDeviceMigrationSuite) TestTenantMigration_BackfillsTenantBoundUs
 		s.T().Skip("skipping test in short mode.")
 	}
 
-	s.Require().NoError(s.Storage.MigrateDown(2))
+	s.Require().NoError(s.Storage.MigrateDown(3))
 	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
 
 	tenantID := uuid.FromStringOrNil("aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa")
@@ -262,26 +262,22 @@ func (s *trustedDeviceMigrationSuite) TestTenantMigration_BackfillsTenantBoundUs
 
 // 20261101235835 is additive: trusted_devices_token_user_idx, the previous image's ON CONFLICT
 // arbiter, survives it, so one browser still holds one row per user across tenants; and its down
-// drops only what it added, leaving that index in place.
+// drops only what it added, leaving that index in place. Run below 20261106065051, which drops the
+// pair index.
 func (s *trustedDeviceMigrationSuite) TestTenantMigration_KeepsThePairIndexAndDownDropsOnlyTheTenant() {
 	if testing.Short() {
 		s.T().Skip("skipping test in short mode.")
 	}
 
+	s.Require().NoError(s.Storage.MigrateDown(1))
 	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
 
 	userID := uuid.FromStringOrNil(fixtureUserID)
 	token := strings.Repeat("f", 64)
 	now := time.Now().UTC().Truncate(time.Second)
 
-	insertUnder := func(tenant string) error {
-		return s.Storage.GetConnection().RawQuery(
-			"INSERT INTO trusted_devices (id, user_id, tenant_id, device_token, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-			uuid.Must(uuid.NewV4()), userID, uuid.FromStringOrNil(tenant), token, now.Add(time.Hour), now, now,
-		).Exec()
-	}
-	s.Require().NoError(insertUnder("aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa"))
-	s.Error(insertUnder("bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb"),
+	s.Require().NoError(s.insertUnderTenant(token, userID, "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa", now.Add(time.Hour)))
+	s.Error(s.insertUnderTenant(token, userID, "bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb", now.Add(time.Hour)),
 		"trusted_devices_token_user_idx must still allow one row per (device_token, user_id)")
 
 	s.Require().NoError(s.Storage.MigrateDown(2))
@@ -294,6 +290,117 @@ func (s *trustedDeviceMigrationSuite) TestTenantMigration_KeepsThePairIndexAndDo
 	s.Len(rows, 1, "the down keeps the rows; it drops only the tenant")
 
 	s.Require().NoError(s.Storage.MigrateUp())
+}
+
+// 20261106065051 (archon#1085 task 34) drops trusted_devices_token_user_idx, so one browser holds
+// the same person's trust for two clinics and for a flow without a tenant side by side; the
+// per-tenant partial indexes still allow one row per (device_token, user_id, tenant). Its down keeps
+// the latest-expiring row of each pair and recreates the index, so an older image's ON CONFLICT has
+// its arbiter again.
+func (s *trustedDeviceMigrationSuite) TestPairIndexDrop_AllowsTrustPerTenantAndDownKeepsTheLatestRow() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
+
+	userID := uuid.FromStringOrNil(fixtureUserID)
+	token := strings.Repeat("d", 64)
+	now := time.Now().UTC().Truncate(time.Second)
+	tenantA := "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa"
+	tenantB := "bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb"
+
+	s.Require().NoError(s.insertUnderTenant(token, userID, tenantA, now.Add(time.Hour)))
+	s.Require().NoError(s.insertUnderTenant(token, userID, tenantB, now.Add(3*time.Hour)),
+		"without the pair index one browser holds trust for a second clinic")
+	s.Require().NoError(s.insertUnderTenant(token, userID, "", now.Add(2*time.Hour)),
+		"and for a flow without a tenant")
+	s.Error(s.insertUnderTenant(token, userID, tenantA, now.Add(4*time.Hour)),
+		"trusted_devices_token_user_tenant_idx still allows one row per clinic")
+	s.Error(s.insertUnderTenant(token, userID, "", now.Add(4*time.Hour)),
+		"trusted_devices_token_user_global_idx still allows one row without a tenant")
+
+	s.Require().NoError(s.Storage.MigrateDown(1))
+
+	var rows []models.TrustedDevice
+	s.Require().NoError(s.Storage.GetConnection().Where("device_token = ?", token).All(&rows))
+	s.Require().Len(rows, 1, "the down keeps one row per (device_token, user_id)")
+	s.Require().NotNil(rows[0].TenantID)
+	s.Equal(tenantB, rows[0].TenantID.String(), "the down keeps the latest-expiring row")
+	s.Error(s.insertUnderTenant(token, userID, tenantA, now.Add(time.Hour)),
+		"after the down, trusted_devices_token_user_idx rejects a second row for the pair")
+
+	s.Require().NoError(s.Storage.MigrateUp())
+}
+
+// 20261106065051's up gives a tenant-bound user's leftover tenantless row the user's tenant before it
+// drops the pair index, while at most one row per (device_token, user_id) exists and the UPDATE
+// cannot collide with trusted_devices_token_user_tenant_idx. A global user's row stays without one.
+func (s *trustedDeviceMigrationSuite) TestPairIndexDrop_UpBackfillsBoundUsersTenantlessRowsBeforeTheDrop() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	s.Require().NoError(s.Storage.MigrateDown(1))
+	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
+
+	tenantID := uuid.FromStringOrNil("aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa")
+	boundUserID := uuid.FromStringOrNil("dddddddd-4444-4444-8444-dddddddddddd")
+	now := time.Now().UTC().Truncate(time.Second)
+	s.Require().NoError(s.Storage.GetConnection().RawQuery(
+		"INSERT INTO tenants (id, name, slug, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+		tenantID, "Tenant A", "tenant-a", true, now, now,
+	).Exec())
+	s.Require().NoError(s.Storage.GetConnection().RawQuery(
+		"INSERT INTO users (id, tenant_id, created_at, updated_at) VALUES (?, ?, ?, ?)",
+		boundUserID, tenantID, now, now,
+	).Exec())
+
+	boundToken := strings.Repeat("h", 64)
+	globalToken := strings.Repeat("i", 64)
+	s.Require().NoError(s.insertUnderTenant(boundToken, boundUserID, "", now.Add(time.Hour)))
+	s.Require().NoError(s.insertUnderTenant(globalToken, uuid.FromStringOrNil(fixtureUserID), "", now.Add(time.Hour)))
+
+	s.Require().NoError(s.Storage.MigrateUp())
+
+	var bound models.TrustedDevice
+	s.Require().NoError(s.Storage.GetConnection().Where("device_token = ?", boundToken).First(&bound))
+	s.Require().NotNil(bound.TenantID, "the up gives a tenant-bound user's tenantless row the user's tenant")
+	s.Equal(tenantID, *bound.TenantID)
+
+	var global models.TrustedDevice
+	s.Require().NoError(s.Storage.GetConnection().Where("device_token = ?", globalToken).First(&global))
+	s.Nil(global.TenantID, "a global user's row stays without a tenant")
+}
+
+func (s *trustedDeviceMigrationSuite) TestPairIndexDrop_DownRefusesAboveTheSizeGateWithoutMaintenanceAcknowledgement() {
+	if testing.Short() {
+		s.T().Skip("requires disposable PostgreSQL")
+	}
+	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
+	s.Require().NoError(s.insertUnderTenant(strings.Repeat("g", 64), uuid.FromStringOrNil(fixtureUserID), "", time.Now().UTC().Add(time.Hour)))
+
+	overGate := s.connectWithOptions("-c hanko.trust_migration_max_live_rows=0")
+	defer overGate.GetConnection().Close()
+	s.Require().ErrorContains(overGate.MigrateDown(1), "too large to roll back under live login traffic")
+	acknowledged := s.connectWithOptions("-c hanko.trust_migration_max_live_rows=0 -c hanko.trusted_device_maintenance=on")
+	defer acknowledged.GetConnection().Close()
+	s.Require().NoError(acknowledged.MigrateDown(1), "explicit maintenance acknowledgement permits the same rollback")
+
+	s.Require().NoError(s.Storage.MigrateUp())
+}
+
+// insertUnderTenant writes a trust row with raw SQL under a tenant, or without one for "".
+func (s *trustedDeviceMigrationSuite) insertUnderTenant(token string, userID uuid.UUID, tenant string, expiresAt time.Time) error {
+	var tenantID interface{}
+	if tenant != "" {
+		tenantID = uuid.FromStringOrNil(tenant)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	return s.Storage.GetConnection().RawQuery(
+		"INSERT INTO trusted_devices (id, user_id, tenant_id, device_token, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		uuid.Must(uuid.NewV4()), userID, tenantID, token, expiresAt, now, now,
+	).Exec()
 }
 
 // rowsWithoutTenant reads trusted_devices naming its columns, for a schema rolled back below

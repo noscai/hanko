@@ -435,13 +435,15 @@ func (s *trustedDevicePersisterSuite) TestFindValidTrust_LegacyRowAnswersOnlyAFl
 	s.Nil(found, "a legacy row must not answer a clinic's flow")
 }
 
-// While trusted_devices_token_user_idx stands (until archon#1085 task 34 drops it), one browser
+// While trusted_devices_token_user_idx stands (below 20261106065051, or after its down), one browser
 // holds one trust row per user: trusting it under another tenant, or without one, moves that row
 // and keeps its id, so trust follows the flow that trusted last.
 func (s *trustedDevicePersisterSuite) TestCreate_WhileThePairIndexStandsTrustFollowsTheLatestTenant() {
 	if testing.Short() {
 		s.T().Skip("skipping test in short mode.")
 	}
+
+	s.Require().NoError(s.Storage.MigrateDown(1))
 
 	userID := uuid.FromStringOrNil(fixtureUserID)
 	token := strings.Repeat("n", 64)
@@ -480,15 +482,13 @@ func (s *trustedDevicePersisterSuite) TestCreate_WhileThePairIndexStandsTrustFol
 	s.Nil(found, "trust moved away from A must no longer answer A")
 }
 
-// The same Create after task 34 drops trusted_devices_token_user_idx: one browser holds the same
-// person's trust for two clinics and for a flow without a tenant, one row each, and re-trusting
-// under one of them refreshes that row only. Dropping the index here is task 34's step, run early.
+// The same Create once 20261106065051 (task 34) has dropped trusted_devices_token_user_idx, the
+// schema at head: one browser holds the same person's trust for two clinics and for a flow without
+// a tenant, one row each, and re-trusting under one of them refreshes that row only.
 func (s *trustedDevicePersisterSuite) TestCreate_WithoutThePairIndexOneBrowserHoldsTrustPerTenant() {
 	if testing.Short() {
 		s.T().Skip("skipping test in short mode.")
 	}
-
-	s.Require().NoError(s.Storage.GetConnection().RawQuery("DROP INDEX trusted_devices_token_user_idx").Exec())
 
 	userID := uuid.FromStringOrNil(fixtureUserID)
 	token := strings.Repeat("p", 64)
@@ -535,9 +535,10 @@ func (s *trustedDevicePersisterSuite) TestCreate_WithoutThePairIndexOneBrowserHo
 	s.WithinDuration(now.Add(5*time.Hour), foundNone.ExpiresAt, time.Second, "re-trusting without a tenant refreshes that row")
 }
 
-// Rollout and rollback safety: the previous image upserts with ON CONFLICT (device_token, user_id)
-// and keeps serving against this schema, so that statement must still find its arbiter.
-func (s *trustedDevicePersisterSuite) TestSchema_PreviousImageUpsertStillHasItsArbiter() {
+// Rollback floor: an image older than 20261101235835 upserts with ON CONFLICT (device_token,
+// user_id). At head (20261106065051 dropped the pair index) that statement has no arbiter, which is
+// why the drop ships only once no such pod is left; after 20261106065051's down it works again.
+func (s *trustedDevicePersisterSuite) TestSchema_PreviousImageUpsertNeedsThePairIndexDropRolledBack() {
 	if testing.Short() {
 		s.T().Skip("skipping test in short mode.")
 	}
@@ -556,8 +557,13 @@ func (s *trustedDevicePersisterSuite) TestSchema_PreviousImageUpsertStillHasItsA
 		).Exec()
 	}
 
+	s.Require().ErrorContains(previousImageUpsert(now.Add(1*time.Hour)), "no unique or exclusion constraint",
+		"at head the previous image's upsert has no arbiter: the rollback floor")
+
+	s.Require().NoError(s.Storage.MigrateDown(1))
+
 	s.Require().NoError(previousImageUpsert(now.Add(1 * time.Hour)))
-	s.Require().NoError(previousImageUpsert(now.Add(2*time.Hour)), "a re-trust by the previous image must upsert, not fail")
+	s.Require().NoError(previousImageUpsert(now.Add(2*time.Hour)), "after the down, a re-trust by the previous image must upsert, not fail")
 
 	count, err := s.Storage.GetConnection().Where("device_token = ? AND user_id = ?", token, userID).Count(&models.TrustedDevice{})
 	s.Require().NoError(err)
@@ -729,7 +735,6 @@ func (s *trustedDevicePersisterSuite) TestAdoptionMergesGlobalAndTargetTrustWith
 		s.T().Skip("requires disposable PostgreSQL")
 	}
 	db := s.Storage.GetConnection()
-	s.Require().NoError(db.RawQuery("DROP INDEX trusted_devices_token_user_idx").Exec())
 	now := time.Now().UTC()
 	s.Require().NoError(db.RawQuery("INSERT INTO tenants (id, name, slug, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", trustTenantA, "Tenant A", "tenant-a", true, now, now).Exec())
 	userID := uuid.FromStringOrNil(fixtureUserID)
