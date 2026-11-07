@@ -1,0 +1,21 @@
+MULTI_TENANT_DOCKER_GUIDE.md
+  s_4e3b0abfbe3b4f::t_25df304e1e4e09 240-241
+backend/persistence/migrations/20261106065051_drop_trusted_devices_token_user_idx.up.fizz
+  s_4e3b0abfbe3b4f::t_be99786c65b211 24-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "725c014aa9a799efbf5caf692017ae7bc83e788a",
+  "prompts": {},
+  "sessions": {
+    "s_4e3b0abfbe3b4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "573b3536-51ca-4609-b594-f2ab57c8856b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}
