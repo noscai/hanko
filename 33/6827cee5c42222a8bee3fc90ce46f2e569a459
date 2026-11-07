@@ -1,0 +1,25 @@
+MULTI_TENANT_DOCKER_GUIDE.md
+  s_c9ff1500430cea::t_c0473db545d82b 224-226,239-241
+backend/persistence/migrations/20261106065051_drop_trusted_devices_token_user_idx.up.fizz
+  s_c9ff1500430cea::t_ecc0f271d99a60 2-3,17-23
+backend/persistence/trusted_device_migration_integration_test.go
+  s_c9ff1500430cea::t_27c6fb7e7a5f39 336-375
+deploy/runbooks/keep-users-global.md
+  s_c9ff1500430cea::t_98d4e2c4c6dd58 15,41-69,76-82,88,92-95,98-114,116-117,145-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "336827cee5c42222a8bee3fc90ce46f2e569a459",
+  "prompts": {},
+  "sessions": {
+    "s_c9ff1500430cea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b273f1a9-0fb5-429e-b20c-0889a5ff2864",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}
