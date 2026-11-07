@@ -1,0 +1,19 @@
+deploy/runbooks/keep-users-global.md
+  s_38425b6ffe0586::t_d2e778bccde055 52-54,60-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "89ba13d163f0ce0d4830fb68a0eecc9cced3a5c6",
+  "prompts": {},
+  "sessions": {
+    "s_38425b6ffe0586": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dbe291cd-ab78-42d7-b067-4a92380ab6f7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mochamad Lutfi Fadlan <mochamadlutfifadlan@gmail.com>"
+    }
+  }
+}
