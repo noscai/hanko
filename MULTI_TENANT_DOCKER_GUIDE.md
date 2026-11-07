@@ -237,7 +237,8 @@ belongs to one tenant, nothing is lost. Before `keep_users_global` is turned on,
 of an older image is left, the index is dropped by migration
 `20261106065051_drop_trusted_devices_token_user_idx` (ClinicOS: archon#1085 task 34), never by hand, so fresh databases and tests keep the clusters'
 schema. Its up gives tenant-bound users' leftover tenantless rows their tenant (the backfill above,
-which cannot collide while the pair index stands) and then runs
+which cannot collide while the pair index stands; it needs no size gate or drain, since it
+row-locks only those rows and `statement_timeout` bounds it) and then runs
 `DROP INDEX IF EXISTS trusted_devices_token_user_idx`; its down deletes all but
 the latest-expiring row of each `(device_token, user_id)` and recreates the unique index. From then
 on one browser holds a separate trust per clinic, with no code change.

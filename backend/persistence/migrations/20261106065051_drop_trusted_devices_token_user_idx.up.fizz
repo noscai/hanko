@@ -21,6 +21,13 @@ sql("DROP INDEX IF EXISTS trusted_devices_token_user_idx")
 # trusted the browser again for their clinic. It touches only those leftover rows, and
 # statement_timeout (hanko.trust_migration_statement_timeout, 30 s by default) bounds it.
 #
+# No live-row size gate here, unlike 20261101235835 and this migration's down. The UPDATE reads
+# without blocking logins and row-locks only the few leftover rows (20261101235835 already
+# backfilled the rest); ACCESS EXCLUSIVE comes only with the DROP INDEX, right before commit. A
+# timeout rolls the whole migration back and the init container retries while the old pods serve.
+# A gate would instead make every rollout of this image above 50,000 live rows a drained Hanko, a
+# login outage for every clinic. The down keeps its gate: it dedupes and builds a unique index.
+#
 # lock_timeout: DROP INDEX takes ACCESS EXCLUSIVE on trusted_devices for an instant. Queued behind a
 # long transaction it would hold every login read behind it; with the timeout it fails after 5 s
 # and the init container retries while the old pods keep serving.
