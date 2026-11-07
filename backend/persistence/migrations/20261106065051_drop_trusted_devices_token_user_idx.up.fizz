@@ -1,4 +1,6 @@
 sql("SET LOCAL lock_timeout = '5s'")
+sql("SELECT set_config('statement_timeout', COALESCE(NULLIF(current_setting('hanko.trust_migration_statement_timeout', true), ''), '30s'), true)")
+sql("UPDATE trusted_devices SET tenant_id = users.tenant_id FROM users WHERE trusted_devices.user_id = users.id AND users.tenant_id IS NOT NULL AND trusted_devices.tenant_id IS NULL")
 sql("DROP INDEX IF EXISTS trusted_devices_token_user_idx")
 # Second step of per-clinic device trust (archon#1085 task 34). 20261101235835 added the per-tenant
 # partial indexes and kept this pair index because the image before it upserts with
@@ -11,6 +13,13 @@ sql("DROP INDEX IF EXISTS trusted_devices_token_user_idx")
 # cluster, and before multi_tenant.keep_users_global goes on there. From then on an image older than
 # 20261101235835 cannot be rolled back to: its ON CONFLICT has no arbiter and every trust write
 # fails. Run this migration's down first.
+#
+# Backfill first: a tenant-bound user's row still without a tenant (written by an older image after
+# 20261101235835's own backfill) takes the user's tenant. While the pair index stands there is at
+# most one row per (device_token, user_id), so this cannot collide with
+# trusted_devices_token_user_tenant_idx; after the drop the same UPDATE could, once that user has
+# trusted the browser again for their clinic. It touches only those leftover rows, and
+# statement_timeout (hanko.trust_migration_statement_timeout, 30 s by default) bounds it.
 #
 # lock_timeout: DROP INDEX takes ACCESS EXCLUSIVE on trusted_devices for an instant. Queued behind a
 # long transaction it would hold every login read behind it; with the timeout it fails after 5 s

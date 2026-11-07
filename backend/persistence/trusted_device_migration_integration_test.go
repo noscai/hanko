@@ -333,6 +333,46 @@ func (s *trustedDeviceMigrationSuite) TestPairIndexDrop_AllowsTrustPerTenantAndD
 	s.Require().NoError(s.Storage.MigrateUp())
 }
 
+// 20261106065051's up gives a tenant-bound user's leftover tenantless row the user's tenant before it
+// drops the pair index, while at most one row per (device_token, user_id) exists and the UPDATE
+// cannot collide with trusted_devices_token_user_tenant_idx. A global user's row stays without one.
+func (s *trustedDeviceMigrationSuite) TestPairIndexDrop_UpBackfillsBoundUsersTenantlessRowsBeforeTheDrop() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	s.Require().NoError(s.Storage.MigrateDown(1))
+	s.Require().NoError(s.LoadFixtures("../test/fixtures/user"))
+
+	tenantID := uuid.FromStringOrNil("aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa")
+	boundUserID := uuid.FromStringOrNil("dddddddd-4444-4444-8444-dddddddddddd")
+	now := time.Now().UTC().Truncate(time.Second)
+	s.Require().NoError(s.Storage.GetConnection().RawQuery(
+		"INSERT INTO tenants (id, name, slug, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+		tenantID, "Tenant A", "tenant-a", true, now, now,
+	).Exec())
+	s.Require().NoError(s.Storage.GetConnection().RawQuery(
+		"INSERT INTO users (id, tenant_id, created_at, updated_at) VALUES (?, ?, ?, ?)",
+		boundUserID, tenantID, now, now,
+	).Exec())
+
+	boundToken := strings.Repeat("h", 64)
+	globalToken := strings.Repeat("i", 64)
+	s.Require().NoError(s.insertUnderTenant(boundToken, boundUserID, "", now.Add(time.Hour)))
+	s.Require().NoError(s.insertUnderTenant(globalToken, uuid.FromStringOrNil(fixtureUserID), "", now.Add(time.Hour)))
+
+	s.Require().NoError(s.Storage.MigrateUp())
+
+	var bound models.TrustedDevice
+	s.Require().NoError(s.Storage.GetConnection().Where("device_token = ?", boundToken).First(&bound))
+	s.Require().NotNil(bound.TenantID, "the up gives a tenant-bound user's tenantless row the user's tenant")
+	s.Equal(tenantID, *bound.TenantID)
+
+	var global models.TrustedDevice
+	s.Require().NoError(s.Storage.GetConnection().Where("device_token = ?", globalToken).First(&global))
+	s.Nil(global.TenantID, "a global user's row stays without a tenant")
+}
+
 func (s *trustedDeviceMigrationSuite) TestPairIndexDrop_DownRefusesAboveTheSizeGateWithoutMaintenanceAcknowledgement() {
 	if testing.Short() {
 		s.T().Skip("requires disposable PostgreSQL")

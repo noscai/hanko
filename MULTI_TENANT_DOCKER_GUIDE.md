@@ -221,8 +221,9 @@ check:
    for that tenant. (A global user adopted to a tenant on login takes their trust rows along.)
 2. Rows written by a pod of the previous image during the rollout have no tenant, so a
    tenant-bound user who trusted a browser in that window is asked for the code once more.
-   Re-run the migration's backfill once each cluster's rollout is complete and no old pod is
-   left:
+   Migration `20261106065051` re-runs this backfill in its up, before it drops the pair index, so
+   a cluster that takes it needs no hand-run statement. A cluster that stays on this version can
+   run it once its rollout is complete and no old pod is left:
    `UPDATE trusted_devices SET tenant_id = users.tenant_id FROM users WHERE trusted_devices.user_id = users.id AND users.tenant_id IS NOT NULL AND trusted_devices.tenant_id IS NULL`.
 3. A tenant-bound user who alternated header-less and headered flows would have had their one
    trust row moved between no tenant and their tenant, and been asked every time. Their flows
@@ -235,7 +236,9 @@ holds one trust row per user and trust follows the clinic that trusted it last; 
 belongs to one tenant, nothing is lost. Before `keep_users_global` is turned on, and only once no pod
 of an older image is left, the index is dropped by migration
 `20261106065051_drop_trusted_devices_token_user_idx` (ClinicOS: archon#1085 task 34), never by hand, so fresh databases and tests keep the clusters'
-schema. Its up is `DROP INDEX IF EXISTS trusted_devices_token_user_idx`; its down deletes all but
+schema. Its up gives tenant-bound users' leftover tenantless rows their tenant (the backfill above,
+which cannot collide while the pair index stands) and then runs
+`DROP INDEX IF EXISTS trusted_devices_token_user_idx`; its down deletes all but
 the latest-expiring row of each `(device_token, user_id)` and recreates the unique index. From then
 on one browser holds a separate trust per clinic, with no code change.
 
