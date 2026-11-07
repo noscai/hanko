@@ -49,13 +49,19 @@ Vault static role `static-creds/hanko-<env>-app`, which rotates; it is rendered 
 `hanko-db` (key `database-url`) in the `hanko` namespace, and it owns the tables, so it runs both
 the precheck and the un-adopt. The Hanko image is distroless (no shell, no `psql`), so run `psql` in
 a throwaway pod in that namespace that takes the URL from the Secret, with the two SQL files mounted
-from a ConfigMap made from this directory:
+from a ConfigMap made from this directory. Every node pool on the AWS clusters is tainted, so the
+pod carries the same `nodeSelector` and tolerations as the Hanko deployment; without them it stays
+`Pending` and `kubectl run` times out:
 
 ```sh
 kubectl --context aws-<env> -n hanko create configmap unadopt-sql \
   --from-file=unadopt-precheck.sql --from-file=unadopt-users.sql
 kubectl --context aws-<env> -n hanko run unadopt-psql --rm -it --restart=Never \
-  --image=postgres:16-alpine --overrides='{"spec":{"containers":[{"name":"unadopt-psql",
+  --image=postgres:16-alpine --overrides='{"spec":{
+  "nodeSelector":{"team":"devops","purpose":"general"},
+  "tolerations":[{"key":"team","operator":"Equal","value":"devops","effect":"NoSchedule"},
+    {"key":"purpose","operator":"Equal","value":"general","effect":"NoSchedule"}],
+  "containers":[{"name":"unadopt-psql",
   "image":"postgres:16-alpine","stdin":true,"tty":true,"command":["sh"],
   "env":[{"name":"HANKO_DB_URL","valueFrom":{"secretKeyRef":{"name":"hanko-db","key":"database-url"}}}],
   "volumeMounts":[{"name":"sql","mountPath":"/sql"}]}],
