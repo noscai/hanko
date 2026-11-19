@@ -1,11 +1,11 @@
 module github.com/teamhanko/hanko/backend/v2
 
-go 1.24.9
+go 1.25.0
 
 require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.11
 	github.com/aws/aws-sdk-go-v2/service/kms v1.50.2
-	github.com/beevik/etree v1.6.0
+	github.com/beevik/etree v1.7.0
 	github.com/brianvoe/gofakeit/v6 v6.28.0
 	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/evanphx/json-patch/v5 v5.9.11
@@ -20,6 +20,7 @@ require (
 	github.com/gobuffalo/validate/v3 v3.3.3
 	github.com/gobwas/glob v0.2.3
 	github.com/gofrs/uuid v4.4.0+incompatible
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/gomodule/redigo v1.9.3
 	github.com/google/uuid v1.6.0
 	github.com/h2non/gock v1.2.0
@@ -44,8 +45,8 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/pquerna/otp v1.5.0
 	github.com/rs/zerolog v1.34.0
-	github.com/russellhaering/gosaml2 v0.10.0
-	github.com/russellhaering/goxmldsig v1.5.0
+	github.com/russellhaering/gosaml2 v0.12.0
+	github.com/russellhaering/goxmldsig v1.6.1
 	github.com/sethvargo/go-limiter v1.1.0
 	github.com/sethvargo/go-redisstore v0.3.0
 	github.com/spf13/cobra v1.10.2
@@ -118,7 +119,6 @@ require (
 	github.com/gobuffalo/tags/v3 v3.1.4 // indirect
 	github.com/goccy/go-json v0.10.3 // indirect
 	github.com/goccy/go-yaml v1.18.0 // indirect
-	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/google/go-tpm v0.9.0 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/gorilla/css v1.0.0 // indirect
@@ -166,7 +166,7 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.63.0 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
-	github.com/rogpeppe/go-internal v1.13.1 // indirect
+	github.com/rogpeppe/go-internal v1.15.0 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/sergi/go-diff v1.2.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
